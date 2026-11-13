@@ -18,9 +18,11 @@ package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.CollectPreconditions.checkNonnegative;
+import static java.util.Arrays.sort;
 import static java.util.Objects.requireNonNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -30,11 +32,11 @@ import java.io.ObjectInputStream;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link BiMap} whose contents will never change, with many other important properties detailed
@@ -43,10 +45,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Jared Levy
  * @since 2.0
  */
-@GwtCompatible(serializable = true, emulated = true)
-@ElementTypesAreNonnullByDefault
-public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<K, V>
-    implements BiMap<K, V> {
+@SuppressWarnings("TooManyParameters")
+@GwtCompatible
+public abstract class ImmutableBiMap<K, V> extends ImmutableMap<K, V> implements BiMap<K, V> {
 
   /**
    * Returns a {@link Collector} that accumulates elements into an {@code ImmutableBiMap} whose keys
@@ -227,6 +228,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
         entryOf(k8, v8),
         entryOf(k9, v9));
   }
+
   /**
    * Returns an immutable map containing the given entries, in order.
    *
@@ -294,7 +296,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
    * Returns a new builder, expecting the specified number of entries to be added.
    *
    * <p>If {@code expectedSize} is exactly the number of entries added to the builder before {@link
-   * Builder#build} is called, the builder is likely to perform better than an unsized {@link
+   * Builder#build()} is called, the builder is likely to perform better than an unsized {@link
    * #builder()} would have.
    *
    * <p>It is not specified if any performance benefits apply if {@code expectedSize} is close to,
@@ -311,14 +313,14 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
    * A builder for creating immutable bimap instances, especially {@code public static final} bimaps
    * ("constant bimaps"). Example:
    *
-   * <pre>{@code
+   * {@snippet :
    * static final ImmutableBiMap<String, Integer> WORD_TO_INT =
    *     new ImmutableBiMap.Builder<String, Integer>()
    *         .put("one", 1)
    *         .put("two", 2)
    *         .put("three", 3)
    *         .buildOrThrow();
-   * }</pre>
+   * }
    *
    * <p>For <i>small</i> immutable bimaps, the {@code ImmutableBiMap.of()} methods are even more
    * convenient.
@@ -349,7 +351,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
 
     /**
      * Associates {@code key} with {@code value} in the built bimap. Duplicate keys or values are
-     * not allowed, and will cause {@link #build} to fail.
+     * not allowed, and will cause {@link #build()} to fail.
      */
     @CanIgnoreReturnValue
     @Override
@@ -360,7 +362,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
 
     /**
      * Adds the given {@code entry} to the bimap. Duplicate keys or values are not allowed, and will
-     * cause {@link #build} to fail.
+     * cause {@link #build()} to fail.
      *
      * @since 19.0
      */
@@ -373,7 +375,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
 
     /**
      * Associates all of the given map's keys and values in the built bimap. Duplicate keys or
-     * values are not allowed, and will cause {@link #build} to fail.
+     * values are not allowed, and will cause {@link #build()} to fail.
      *
      * @throws NullPointerException if any key or value in {@code map} is null
      */
@@ -386,7 +388,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
 
     /**
      * Adds all of the given entries to the built bimap. Duplicate keys or values are not allowed,
-     * and will cause {@link #build} to fail.
+     * and will cause {@link #build()} to fail.
      *
      * @throws NullPointerException if any key, value, or entry is null
      * @since 19.0
@@ -468,11 +470,11 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
             if (entriesUsed) {
               entries = Arrays.copyOf(entries, size);
             }
-            Arrays.sort(
-                (Entry<K, V>[]) entries, // Entries up to size are not null
+            sort(
+                entries, // Entries up to size are not null
                 0,
                 size,
-                Ordering.from(valueComparator).onResultOf(Maps.valueFunction()));
+                Ordering.from(valueComparator).onResultOf(Entry::getValue));
           }
           entriesUsed = true;
           return RegularImmutableBiMap.fromEntryArray(size, entries);
@@ -583,16 +585,11 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
 
   /**
    * Returns an immutable set of the values in this map, in the same order they appear in {@link
-   * #entrySet}.
+   * #entrySet()}.
    */
   @Override
-  public ImmutableSet<V> values() {
+  public final ImmutableSet<V> values() {
     return inverse().keySet();
-  }
-
-  @Override
-  final ImmutableSet<V> createValues() {
-    throw new AssertionError("should never be called");
   }
 
   /**
@@ -605,8 +602,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
   @Deprecated
   @Override
   @DoNotCall("Always throws UnsupportedOperationException")
-  @CheckForNull
-  public final V forcePut(K key, V value) {
+  public final @Nullable V forcePut(K key, V value) {
     throw new UnsupportedOperationException();
   }
 
@@ -619,7 +615,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
    * bimap and its inverse in sync during serialization, the way AbstractBiMap does.
    */
   @J2ktIncompatible // serialization
-  private static class SerializedForm<K, V> extends ImmutableMap.SerializedForm<K, V> {
+  private static final class SerializedForm<K, V> extends ImmutableMap.SerializedForm<K, V> {
     SerializedForm(ImmutableBiMap<K, V> bimap) {
       super(bimap);
     }
@@ -629,7 +625,7 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
       return new Builder<>(size);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible private static final long serialVersionUID = 0;
   }
 
   @Override
@@ -642,4 +638,40 @@ public abstract class ImmutableBiMap<K, V> extends ImmutableBiMapFauxverideShim<
   private void readObject(ObjectInputStream stream) throws InvalidObjectException {
     throw new InvalidObjectException("Use SerializedForm");
   }
+
+  /**
+   * Not supported. Use {@link #toImmutableBiMap} instead. This method exists only to hide {@link
+   * ImmutableMap#toImmutableMap(Function, Function)} from consumers of {@code ImmutableBiMap}.
+   *
+   * @throws UnsupportedOperationException always
+   * @deprecated Use {@link ImmutableBiMap#toImmutableBiMap(Function, Function)}.
+   */
+  @Deprecated
+  @DoNotCall("Use toImmutableBiMap")
+  public static <T extends @Nullable Object, K, V>
+      Collector<T, ?, ImmutableMap<K, V>> toImmutableMap(
+          Function<? super T, ? extends K> keyFunction,
+          Function<? super T, ? extends V> valueFunction) {
+    throw new UnsupportedOperationException();
+  }
+
+  /**
+   * Not supported. This method does not make sense for {@code BiMap}. This method exists only to
+   * hide {@link ImmutableMap#toImmutableMap(Function, Function, BinaryOperator)} from consumers of
+   * {@code ImmutableBiMap}.
+   *
+   * @throws UnsupportedOperationException always
+   * @deprecated Merging values does not make sense for a {@code BiMap}.
+   */
+  @Deprecated
+  @DoNotCall("Use toImmutableBiMap")
+  public static <T extends @Nullable Object, K, V>
+      Collector<T, ?, ImmutableMap<K, V>> toImmutableMap(
+          Function<? super T, ? extends K> keyFunction,
+          Function<? super T, ? extends V> valueFunction,
+          BinaryOperator<V> mergeFunction) {
+    throw new UnsupportedOperationException();
+  }
+
+  @GwtIncompatible @J2ktIncompatible   private static final long serialVersionUID = 0xcafebabe;
 }

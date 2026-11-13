@@ -16,23 +16,21 @@
 
 package com.google.common.collect;
 
+import static com.google.common.collect.Sets.newTreeSet;
+
 import com.google.common.base.Predicate;
 import com.google.common.collect.FilteredCollectionsTestUtil.AbstractFilteredSortedSetTest;
+import com.google.common.collect.ForwardingSortedSet.SimpleForwardingSortedSet;
 import java.util.SortedSet;
-import java.util.TreeSet;
+import org.jspecify.annotations.NullUnmarked;
 
+@NullUnmarked
 public final class SetsFilterSortedSetTest
     extends AbstractFilteredSortedSetTest<SortedSet<Integer>> {
   @Override
   SortedSet<Integer> createUnfiltered(Iterable<Integer> contents) {
-    final TreeSet<Integer> result = Sets.newTreeSet(contents);
     // we have to make the result not Navigable
-    return new ForwardingSortedSet<Integer>() {
-      @Override
-      protected SortedSet<Integer> delegate() {
-        return result;
-      }
-    };
+    return new SimpleForwardingSortedSet<Integer>(newTreeSet(contents)) {};
   }
 
   @Override

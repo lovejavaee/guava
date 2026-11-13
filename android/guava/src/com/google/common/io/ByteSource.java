@@ -16,16 +16,15 @@ package com.google.common.io;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.io.ByteStreams.createBuffer;
+import static com.google.common.hash.Funnels.asOutputStream;
 import static com.google.common.io.ByteStreams.skipUpTo;
+import static java.lang.Math.min;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Ascii;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
-import com.google.common.hash.Funnels;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
@@ -41,7 +40,7 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A readable source of bytes, such as a file. Unlike an {@link InputStream}, a {@code ByteSource}
@@ -76,7 +75,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ByteSource {
 
   /** Constructor for use by subclasses. */
@@ -180,7 +178,6 @@ public abstract class ByteSource {
    *
    * @since 19.0
    */
-  @Beta
   public Optional<Long> sizeIfKnown() {
     return Optional.absent();
   }
@@ -232,7 +229,7 @@ public abstract class ByteSource {
   }
 
   /** Counts the bytes in the given input stream using skip if possible. */
-  private long countBySkipping(InputStream in) throws IOException {
+  private static long countBySkipping(InputStream in) throws IOException {
     long count = 0;
     long skipped;
     while ((skipped = skipUpTo(in, Integer.MAX_VALUE)) > 0) {
@@ -316,7 +313,6 @@ public abstract class ByteSource {
    *     processor} throws an {@code IOException}
    * @since 16.0
    */
-  @Beta
   @CanIgnoreReturnValue // some processors won't return a useful result
   @ParametricNullness
   public <T extends @Nullable Object> T read(ByteProcessor<T> processor) throws IOException {
@@ -340,7 +336,7 @@ public abstract class ByteSource {
    */
   public HashCode hash(HashFunction hashFunction) throws IOException {
     Hasher hasher = hashFunction.newHasher();
-    copyTo(Funnels.asOutputStream(hasher));
+    copyTo(asOutputStream(hasher));
     return hasher.hash();
   }
 
@@ -353,22 +349,10 @@ public abstract class ByteSource {
   public boolean contentEquals(ByteSource other) throws IOException {
     checkNotNull(other);
 
-    byte[] buf1 = createBuffer();
-    byte[] buf2 = createBuffer();
-
     Closer closer = Closer.create();
     try {
-      InputStream in1 = closer.register(openStream());
-      InputStream in2 = closer.register(other.openStream());
-      while (true) {
-        int read1 = ByteStreams.read(in1, buf1, 0, buf1.length);
-        int read2 = ByteStreams.read(in2, buf2, 0, buf2.length);
-        if (read1 != read2 || !Arrays.equals(buf1, buf2)) {
-          return false;
-        } else if (read1 != buf1.length) {
-          return true;
-        }
-      }
+      return ByteStreams.contentsEqual(
+          closer.register(openStream()), closer.register(other.openStream()));
     } catch (Throwable e) {
       throw closer.rethrow(e);
     } finally {
@@ -490,8 +474,8 @@ public abstract class ByteSource {
     }
 
     @Override
-    public String toString() {
-      return ByteSource.this.toString() + ".asCharSource(" + charset + ")";
+    public final String toString() {
+      return ByteSource.this + ".asCharSource(" + charset + ")";
     }
   }
 
@@ -549,7 +533,7 @@ public abstract class ByteSource {
       long maxLength = this.length - offset;
       return maxLength <= 0
           ? ByteSource.empty()
-          : ByteSource.this.slice(this.offset + offset, Math.min(length, maxLength));
+          : ByteSource.this.slice(this.offset + offset, min(length, maxLength));
     }
 
     @Override
@@ -562,15 +546,15 @@ public abstract class ByteSource {
       Optional<Long> optionalUnslicedSize = ByteSource.this.sizeIfKnown();
       if (optionalUnslicedSize.isPresent()) {
         long unslicedSize = optionalUnslicedSize.get();
-        long off = Math.min(offset, unslicedSize);
-        return Optional.of(Math.min(length, unslicedSize - off));
+        long off = min(offset, unslicedSize);
+        return Optional.of(min(length, unslicedSize - off));
       }
       return Optional.absent();
     }
 
     @Override
     public String toString() {
-      return ByteSource.this.toString() + ".slice(" + offset + ", " + length + ")";
+      return ByteSource.this + ".slice(" + offset + ", " + length + ")";
     }
   }
 
@@ -594,7 +578,7 @@ public abstract class ByteSource {
     }
 
     @Override
-    public InputStream openStream() {
+    public final InputStream openStream() {
       return new ByteArrayInputStream(bytes, offset, length);
     }
 
@@ -638,7 +622,7 @@ public abstract class ByteSource {
     }
 
     @Override
-    public HashCode hash(HashFunction hashFunction) throws IOException {
+    public HashCode hash(HashFunction hashFunction) {
       return hashFunction.hashBytes(bytes, offset, length);
     }
 
@@ -647,8 +631,8 @@ public abstract class ByteSource {
       checkArgument(offset >= 0, "offset (%s) may not be negative", offset);
       checkArgument(length >= 0, "length (%s) may not be negative", length);
 
-      offset = Math.min(offset, this.length);
-      length = Math.min(length, this.length - offset);
+      offset = min(offset, this.length);
+      length = min(length, this.length - offset);
       int newOffset = this.offset + (int) offset;
       return new ByteArrayByteSource(bytes, newOffset, (int) length);
     }

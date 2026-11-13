@@ -16,21 +16,24 @@
 
 package com.google.common.collect;
 
+import static com.google.common.collect.Hashing.smearedHash;
+import static java.lang.System.arraycopy;
+
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import java.util.Spliterator;
 import java.util.Spliterators;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of {@link ImmutableSet} with two or more elements.
  *
  * @author Kevin Bourrillion
  */
-@GwtCompatible(serializable = true, emulated = true)
+@GwtCompatible
 @SuppressWarnings("serial") // uses writeReplace(), not default serialization
-@ElementTypesAreNonnullByDefault
 final class RegularImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
   private static final Object[] EMPTY_ARRAY = new Object[0];
   static final RegularImmutableSet<Object> EMPTY =
@@ -51,12 +54,12 @@ final class RegularImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
   }
 
   @Override
-  public boolean contains(@CheckForNull Object target) {
+  public boolean contains(@Nullable Object target) {
     @Nullable Object[] table = this.table;
     if (target == null || table.length == 0) {
       return false;
     }
-    for (int i = Hashing.smearedHash(target); ; i++) {
+    for (int i = smearedHash(target); ; i++) {
       i &= mask;
       Object candidate = table[i];
       if (candidate == null) {
@@ -72,6 +75,9 @@ final class RegularImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
     return elements.length;
   }
 
+  // We're careful to put only E instances into the array in the mainline.
+  // (In the backport, we don't need this suppression, but we keep it to minimize diffs.)
+  @SuppressWarnings("unchecked")
   @Override
   public UnmodifiableIterator<E> iterator() {
     return (UnmodifiableIterator<E>) Iterators.forArray(elements);
@@ -99,15 +105,13 @@ final class RegularImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
 
   @Override
   int copyIntoArray(@Nullable Object[] dst, int offset) {
-    System.arraycopy(elements, 0, dst, offset, elements.length);
+    arraycopy(elements, 0, dst, offset, elements.length);
     return offset + elements.length;
   }
 
   @Override
   ImmutableList<E> createAsList() {
-    return (table.length == 0)
-        ? ImmutableList.<E>of()
-        : new RegularImmutableAsList<E>(this, elements);
+    return (table.length == 0) ? ImmutableList.of() : new RegularImmutableAsList<>(this, elements);
   }
 
   @Override
@@ -123,5 +127,14 @@ final class RegularImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
   @Override
   boolean isHashCodeFast() {
     return true;
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

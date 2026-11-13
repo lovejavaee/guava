@@ -18,16 +18,22 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
+import static java.lang.Math.floorMod;
+import static java.lang.System.arraycopy;
+import static java.util.Collections.emptyList;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
+import com.google.errorprone.annotations.InlineMe;
+import com.google.errorprone.annotations.InlineMeValidationDisabled;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.RandomAccess;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utility methods pertaining to {@code byte} primitives, that are not already found in
@@ -44,19 +50,19 @@ import javax.annotation.CheckForNull;
 // TODO(kevinb): how to prevent warning on UnsignedBytes when building GWT
 // javadoc?
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class Bytes {
   private Bytes() {}
 
   /**
-   * Returns a hash code for {@code value}; equal to the result of invoking {@code ((Byte)
-   * value).hashCode()}.
-   *
-   * <p><b>Java 8 users:</b> use {@link Byte#hashCode(byte)} instead.
+   * Returns a hash code for {@code value}; obsolete alternative to {@link Byte#hashCode(byte)}.
    *
    * @param value a primitive {@code byte} value
    * @return a hash code for the value
    */
+  @InlineMe(replacement = "Byte.hashCode(value)")
+  @InlineMeValidationDisabled(
+      "The hash code of a byte is the int version of the byte itself, so it's simplest to return"
+          + " that.")
   public static int hashCode(byte value) {
     return value;
   }
@@ -89,9 +95,20 @@ public final class Bytes {
     return indexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int indexOf(byte[] array, byte target, int start, int end) {
-    for (int i = start; i < end; i++) {
+  /**
+   * Returns the index of the first appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the least index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i] ==
+   *     target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(byte[] array, byte target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = fromIndex; i < toIndex; i++) {
       if (array[i] == target) {
         return i;
       }
@@ -110,14 +127,32 @@ public final class Bytes {
    * @param target the array to search for as a sub-sequence of {@code array}
    */
   public static int indexOf(byte[] array, byte[] target) {
+    return indexOf(array, target, 0, array.length);
+  }
+
+  /**
+   * Returns the start position of the first occurrence of the specified {@code target} within
+   * {@code array} between {@code fromIndex} inclusive and {@code toIndex} exclusive, or {@code -1}
+   * if there is no such occurrence.
+   *
+   * <p>More formally, returns the lowest index {@code i} such that {@code i >= fromIndex}, {@code i
+   * + target.length <= toIndex}, and {@code Arrays.copyOfRange(array, i, i + target.length)}
+   * contains exactly the same elements as {@code target}.
+   *
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(byte[] array, byte[] target, int fromIndex, int toIndex) {
     checkNotNull(array, "array");
     checkNotNull(target, "target");
+    checkPositionIndexes(fromIndex, toIndex, array.length);
     if (target.length == 0) {
-      return 0;
+      return fromIndex;
     }
 
     outer:
-    for (int i = 0; i < array.length - target.length + 1; i++) {
+    for (int i = fromIndex; i < toIndex - target.length + 1; i++) {
       for (int j = 0; j < target.length; j++) {
         if (array[i + j] != target[j]) {
           continue outer;
@@ -140,9 +175,20 @@ public final class Bytes {
     return lastIndexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int lastIndexOf(byte[] array, byte target, int start, int end) {
-    for (int i = end - 1; i >= start; i--) {
+  /**
+   * Returns the index of the last appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the greatest index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i]
+   *     == target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int lastIndexOf(byte[] array, byte target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = toIndex - 1; i >= fromIndex; i--) {
       if (array[i] == target) {
         return i;
       }
@@ -156,19 +202,29 @@ public final class Bytes {
    *
    * @param arrays zero or more {@code byte} arrays
    * @return a single array containing all the values from the source arrays, in order
+   * @throws IllegalArgumentException if the total number of elements in {@code arrays} does not fit
+   *     in an {@code int}
    */
   public static byte[] concat(byte[]... arrays) {
-    int length = 0;
+    long length = 0;
     for (byte[] array : arrays) {
       length += array.length;
     }
-    byte[] result = new byte[length];
+    byte[] result = new byte[checkNoOverflow(length)];
     int pos = 0;
     for (byte[] array : arrays) {
-      System.arraycopy(array, 0, result, pos, array.length);
+      arraycopy(array, 0, result, pos, array.length);
       pos += array.length;
     }
     return result;
+  }
+
+  private static int checkNoOverflow(long result) {
+    checkArgument(
+        result == (int) result,
+        "the total number of elements (%s) in the arrays must fit in an int",
+        result);
+    return (int) result;
   }
 
   /**
@@ -234,13 +290,12 @@ public final class Bytes {
    */
   public static List<Byte> asList(byte... backingArray) {
     if (backingArray.length == 0) {
-      return Collections.emptyList();
+      return emptyList();
     }
     return new ByteArrayAsList(backingArray);
   }
 
-  @GwtCompatible
-  private static class ByteArrayAsList extends AbstractList<Byte>
+  private static final class ByteArrayAsList extends AbstractList<Byte>
       implements RandomAccess, Serializable {
     final byte[] array;
     final int start;
@@ -273,13 +328,13 @@ public final class Bytes {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object target) {
+    public boolean contains(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       return (target instanceof Byte) && Bytes.indexOf(array, (Byte) target, start, end) != -1;
     }
 
     @Override
-    public int indexOf(@CheckForNull Object target) {
+    public int indexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Byte) {
         int i = Bytes.indexOf(array, (Byte) target, start, end);
@@ -291,7 +346,7 @@ public final class Bytes {
     }
 
     @Override
-    public int lastIndexOf(@CheckForNull Object target) {
+    public int lastIndexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Byte) {
         int i = Bytes.lastIndexOf(array, (Byte) target, start, end);
@@ -316,13 +371,13 @@ public final class Bytes {
       int size = size();
       checkPositionIndexes(fromIndex, toIndex, size);
       if (fromIndex == toIndex) {
-        return Collections.emptyList();
+        return emptyList();
       }
       return new ByteArrayAsList(array, start + fromIndex, start + toIndex);
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object == this) {
         return true;
       }
@@ -346,7 +401,7 @@ public final class Bytes {
     public int hashCode() {
       int result = 1;
       for (int i = start; i < end; i++) {
-        result = 31 * result + Bytes.hashCode(array[i]);
+        result = 31 * result + Byte.hashCode(array[i]);
       }
       return result;
     }
@@ -365,7 +420,7 @@ public final class Bytes {
       return Arrays.copyOfRange(array, start, end);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /**
@@ -407,7 +462,7 @@ public final class Bytes {
    *
    * <p>The provided "distance" may be negative, which will rotate left.
    *
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(byte[] array, int distance) {
     rotate(array, distance, 0, array.length);
@@ -423,26 +478,24 @@ public final class Bytes {
    *
    * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
    *     {@code toIndex > fromIndex}
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(byte[] array, int distance, int fromIndex, int toIndex) {
     // See Ints.rotate for more details about possible algorithms here.
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    if (array.length <= 1) {
+    int length = toIndex - fromIndex;
+    if (length <= 1) {
       return;
     }
 
-    int length = toIndex - fromIndex;
-    // Obtain m = (-distance mod length), a non-negative value less than "length". This is how many
-    // places left to rotate.
-    int m = -distance % length;
-    m = (m < 0) ? m + length : m;
-    // The current index of what will become the first element of the rotated section.
-    int newFirstIndex = m + fromIndex;
-    if (newFirstIndex == fromIndex) {
+    // Map the given distance to an equivalent, non-negative value less than "length".
+    distance = floorMod(distance, length);
+    if (distance == 0) {
       return;
     }
+    // The current index of what will become the first element of the rotated section.
+    int newFirstIndex = toIndex - distance;
 
     reverse(array, fromIndex, newFirstIndex);
     reverse(array, newFirstIndex, toIndex);

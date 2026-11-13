@@ -18,17 +18,18 @@ package com.google.common.graph;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Maps.newHashMapWithExpectedSize;
+import static com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize;
+import static com.google.common.collect.Maps.newTreeMap;
 
-import com.google.common.annotations.Beta;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.MoreObjects.ToStringHelper;
-import com.google.common.base.Objects;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
 import com.google.errorprone.annotations.Immutable;
 import java.util.Comparator;
 import java.util.Map;
-import javax.annotation.CheckForNull;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Used to represent the order of elements in a data structure that supports different options for
@@ -36,23 +37,20 @@ import javax.annotation.CheckForNull;
  *
  * <p>Example usage:
  *
- * <pre>{@code
+ * {@snippet :
  * MutableGraph<Integer> graph =
  *     GraphBuilder.directed().nodeOrder(ElementOrder.<Integer>natural()).build();
- * }</pre>
+ * }
  *
  * @author Joshua O'Madadhain
  * @since 20.0
  */
-@Beta
 @Immutable
-@ElementTypesAreNonnullByDefault
 public final class ElementOrder<T> {
   private final Type type;
 
   @SuppressWarnings("Immutable") // Hopefully the comparator provided is immutable!
-  @CheckForNull
-  private final Comparator<T> comparator;
+  private final @Nullable Comparator<T> comparator;
 
   /**
    * The type of ordering that this object specifies.
@@ -72,7 +70,7 @@ public final class ElementOrder<T> {
     SORTED
   }
 
-  private ElementOrder(Type type, @CheckForNull Comparator<T> comparator) {
+  private ElementOrder(Type type, @Nullable Comparator<T> comparator) {
     this.type = checkNotNull(type);
     this.comparator = comparator;
     checkState((type == Type.SORTED) == (comparator != null));
@@ -90,7 +88,7 @@ public final class ElementOrder<T> {
    * <p>This instance is only useful in combination with {@code incidentEdgeOrder}, e.g. {@code
    * graphBuilder.incidentEdgeOrder(ElementOrder.stable())}.
    *
-   * <h3>In combination with {@code incidentEdgeOrder}</h3>
+   * <h4>In combination with {@code incidentEdgeOrder}</h4>
    *
    * <p>{@code incidentEdgeOrder(ElementOrder.stable())} guarantees the ordering of the returned
    * collections of the following methods:
@@ -132,7 +130,7 @@ public final class ElementOrder<T> {
    * Returns an instance which specifies that the natural ordering of the elements is guaranteed.
    */
   public static <S extends Comparable<? super S>> ElementOrder<S> natural() {
-    return new ElementOrder<>(Type.SORTED, Ordering.<S>natural());
+    return new ElementOrder<>(Type.SORTED, Ordering.natural());
   }
 
   /**
@@ -161,7 +159,7 @@ public final class ElementOrder<T> {
   }
 
   @Override
-  public boolean equals(@CheckForNull Object obj) {
+  public boolean equals(@Nullable Object obj) {
     if (obj == this) {
       return true;
     }
@@ -170,12 +168,12 @@ public final class ElementOrder<T> {
     }
 
     ElementOrder<?> other = (ElementOrder<?>) obj;
-    return (type == other.type) && Objects.equal(comparator, other.comparator);
+    return (type == other.type) && Objects.equals(comparator, other.comparator);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(type, comparator);
+    return Objects.hash(type, comparator);
   }
 
   @Override
@@ -191,15 +189,14 @@ public final class ElementOrder<T> {
   <K extends T, V> Map<K, V> createMap(int expectedSize) {
     switch (type) {
       case UNORDERED:
-        return Maps.newHashMapWithExpectedSize(expectedSize);
+        return newHashMapWithExpectedSize(expectedSize);
       case INSERTION:
       case STABLE:
-        return Maps.newLinkedHashMapWithExpectedSize(expectedSize);
+        return newLinkedHashMapWithExpectedSize(expectedSize);
       case SORTED:
-        return Maps.newTreeMap(comparator());
-      default:
-        throw new AssertionError();
+        return newTreeMap(comparator());
     }
+    throw new AssertionError();
   }
 
   @SuppressWarnings("unchecked")

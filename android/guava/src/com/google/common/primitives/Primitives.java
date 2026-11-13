@@ -15,9 +15,9 @@
 package com.google.common.primitives;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Collections.unmodifiableMap;
 
 import com.google.common.annotations.GwtCompatible;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -30,14 +30,17 @@ import java.util.Set;
  * @since 1.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class Primitives {
   private Primitives() {}
 
   /** A map from primitive types to their corresponding wrapper types. */
+  // It's a constant, and we can't use ImmutableMap here without creating a circular dependency.
+  @SuppressWarnings("ConstantCaseForConstants")
   private static final Map<Class<?>, Class<?>> PRIMITIVE_TO_WRAPPER_TYPE;
 
   /** A map from wrapper types to their corresponding primitive types. */
+  // It's a constant, and we can't use ImmutableMap here without creating a circular dependency.
+  @SuppressWarnings("ConstantCaseForConstants")
   private static final Map<Class<?>, Class<?>> WRAPPER_TO_PRIMITIVE_TYPE;
 
   // Sad that we can't use a BiMap. :(
@@ -56,8 +59,8 @@ public final class Primitives {
     add(primToWrap, wrapToPrim, short.class, Short.class);
     add(primToWrap, wrapToPrim, void.class, Void.class);
 
-    PRIMITIVE_TO_WRAPPER_TYPE = Collections.unmodifiableMap(primToWrap);
-    WRAPPER_TO_PRIMITIVE_TYPE = Collections.unmodifiableMap(wrapToPrim);
+    PRIMITIVE_TO_WRAPPER_TYPE = unmodifiableMap(primToWrap);
+    WRAPPER_TO_PRIMITIVE_TYPE = unmodifiableMap(wrapToPrim);
   }
 
   private static void add(

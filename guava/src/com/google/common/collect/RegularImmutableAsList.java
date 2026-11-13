@@ -18,9 +18,9 @@ package com.google.common.collect;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.util.function.Consumer;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An {@link ImmutableAsList} implementation specialized for when the delegate collection is already
@@ -28,9 +28,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
 @SuppressWarnings("serial") // uses writeReplace, not default serialization
-@ElementTypesAreNonnullByDefault
 class RegularImmutableAsList<E> extends ImmutableAsList<E> {
   private final ImmutableCollection<E> delegate;
   private final ImmutableList<? extends E> delegateList;
@@ -41,7 +40,7 @@ class RegularImmutableAsList<E> extends ImmutableAsList<E> {
   }
 
   RegularImmutableAsList(ImmutableCollection<E> delegate, Object[] array) {
-    this(delegate, ImmutableList.<E>asImmutableList(array));
+    this(delegate, asImmutableList(array));
   }
 
   @Override
@@ -49,13 +48,13 @@ class RegularImmutableAsList<E> extends ImmutableAsList<E> {
     return delegate;
   }
 
-  ImmutableList<? extends E> delegateList() {
+  final ImmutableList<? extends E> delegateList() {
     return delegateList;
   }
 
   @SuppressWarnings("unchecked") // safe covariant cast!
   @Override
-  public UnmodifiableListIterator<E> listIterator(int index) {
+  public final UnmodifiableListIterator<E> listIterator(int index) {
     return (UnmodifiableListIterator<E>) delegateList.listIterator(index);
   }
 
@@ -72,8 +71,7 @@ class RegularImmutableAsList<E> extends ImmutableAsList<E> {
   }
 
   @Override
-  @CheckForNull
-  Object[] internalArray() {
+  Object @Nullable [] internalArray() {
     return delegateList.internalArray();
   }
 
@@ -88,7 +86,16 @@ class RegularImmutableAsList<E> extends ImmutableAsList<E> {
   }
 
   @Override
-  public E get(int index) {
+  public final E get(int index) {
     return delegateList.get(index);
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

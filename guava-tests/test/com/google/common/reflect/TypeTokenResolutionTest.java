@@ -16,10 +16,14 @@
 
 package com.google.common.reflect;
 
+import static com.google.common.reflect.Types.newArrayType;
+import static com.google.common.reflect.Types.newParameterizedType;
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
+import com.google.errorprone.annotations.Keep;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -29,13 +33,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Unit test for {@link TypeToken} and {@link TypeResolver}.
  *
  * @author Ben Yu
  */
-@AndroidIncompatible // lots of failures, possibly some related to bad equals() implementations?
+@NullUnmarked
 public class TypeTokenResolutionTest extends TestCase {
 
   private static class Foo<A, B> {
@@ -63,37 +68,37 @@ public class TypeTokenResolutionTest extends TestCase {
 
   public void testSimpleTypeToken() {
     Foo<String, Integer> foo = new Foo<String, Integer>() {};
-    assertEquals(String.class, foo.getClassA());
-    assertEquals(Integer.class, foo.getClassB());
-    assertEquals(String[].class, foo.getArrayClassA());
-    assertEquals(Integer[].class, foo.getArrayClassB());
+    assertThat(foo.getClassA()).isEqualTo(String.class);
+    assertThat(foo.getClassB()).isEqualTo(Integer.class);
+    assertThat(foo.getArrayClassA()).isEqualTo(String[].class);
+    assertThat(foo.getArrayClassB()).isEqualTo(Integer[].class);
   }
 
   public void testCompositeTypeToken() {
     Foo<String[], List<int[]>> foo = new Foo<String[], List<int[]>>() {};
-    assertEquals(String[].class, foo.getClassA());
-    assertEquals(List.class, foo.getClassB());
-    assertEquals(String[][].class, foo.getArrayClassA());
-    assertEquals(List[].class, foo.getArrayClassB());
+    assertThat(foo.getClassA()).isEqualTo(String[].class);
+    assertThat(foo.getClassB()).isEqualTo(List.class);
+    assertThat(foo.getArrayClassA()).isEqualTo(String[][].class);
+    assertThat(foo.getArrayClassB()).isEqualTo(List[].class);
   }
 
   private static class StringFoo<T> extends Foo<String, T> {}
 
   public void testPartialSpecialization() {
     StringFoo<Integer> foo = new StringFoo<Integer>() {};
-    assertEquals(String.class, foo.getClassA());
-    assertEquals(Integer.class, foo.getClassB());
-    assertEquals(String[].class, foo.getArrayClassA());
-    assertEquals(Integer[].class, foo.getArrayClassB());
+    assertThat(foo.getClassA()).isEqualTo(String.class);
+    assertThat(foo.getClassB()).isEqualTo(Integer.class);
+    assertThat(foo.getArrayClassA()).isEqualTo(String[].class);
+    assertThat(foo.getArrayClassB()).isEqualTo(Integer[].class);
     assertEquals(new TypeToken<String[]>() {}.getType(), foo.getArrayTypeA());
   }
 
   public void testTypeArgNotFound() {
     StringFoo<Integer> foo = new StringFoo<>();
-    assertEquals(String.class, foo.getClassA());
-    assertEquals(String[].class, foo.getArrayClassA());
-    assertEquals(Object.class, foo.getClassB());
-    assertEquals(Object[].class, foo.getArrayClassB());
+    assertThat(foo.getClassA()).isEqualTo(String.class);
+    assertThat(foo.getArrayClassA()).isEqualTo(String[].class);
+    assertThat(foo.getClassB()).isEqualTo(Object.class);
+    assertThat(foo.getArrayClassB()).isEqualTo(Object[].class);
   }
 
   private abstract static class Bar<T> {}
@@ -143,8 +148,8 @@ public class TypeTokenResolutionTest extends TestCase {
   public void testGenericInterface() {
     // test the 1st generic interface on the class
     Type fType = Supplier.class.getTypeParameters()[0];
-    assertEquals(
-        Integer.class, TypeToken.of(IntegerStringFunction.class).resolveType(fType).getRawType());
+    assertThat(TypeToken.of(IntegerStringFunction.class).resolveType(fType).getRawType())
+        .isEqualTo(Integer.class);
 
     // test the 2nd generic interface on the class
     Type predicateParameterType = Predicate.class.getTypeParameters()[0];
@@ -156,8 +161,8 @@ public class TypeTokenResolutionTest extends TestCase {
   private abstract static class StringIntegerFoo extends Foo<String, Integer> {}
 
   public void testConstructor_typeArgsResolvedFromAncestorClass() {
-    assertEquals(String.class, new StringIntegerFoo() {}.getClassA());
-    assertEquals(Integer.class, new StringIntegerFoo() {}.getClassB());
+    assertThat(new StringIntegerFoo() {}.getClassA()).isEqualTo(String.class);
+    assertThat(new StringIntegerFoo() {}.getClassB()).isEqualTo(Integer.class);
   }
 
   private static class Owner<T> {
@@ -175,17 +180,16 @@ public class TypeTokenResolutionTest extends TestCase {
   }
 
   public void testResolveNestedClass() {
-    assertEquals(String.class, new Owner.Nested<String>() {}.getTypeArgument());
+    assertThat(new Owner.Nested<String>() {}.getTypeArgument()).isEqualTo(String.class);
   }
 
-  @SuppressWarnings("RestrictedApiChecker") // crashes under JDK8, which EP no longer supports
   public void testResolveInnerClass() {
-    assertEquals(String.class, new Owner<Integer>().new Inner<String>() {}.getTypeArgument());
+    assertThat(new Owner<Integer>().new Inner<String>() {}.getTypeArgument())
+        .isEqualTo(String.class);
   }
 
-  @SuppressWarnings("RestrictedApiChecker") // crashes under JDK8, which EP no longer supports
   public void testResolveOwnerClass() {
-    assertEquals(Integer.class, new Owner<Integer>().new Inner<String>() {}.getOwnerType());
+    assertThat(new Owner<Integer>().new Inner<String>() {}.getOwnerType()).isEqualTo(Integer.class);
   }
 
   private static class Mapping<F, T> {
@@ -221,10 +225,9 @@ public class TypeTokenResolutionTest extends TestCase {
   }
 
   private static class ParameterizedOuter<T> {
+    @Keep public Inner field;
 
-    @SuppressWarnings("unused") // used by reflection
-    public Inner field;
-
+    @SuppressWarnings("ClassCanBeStatic") // We want to test an inner class.
     class Inner {}
   }
 
@@ -248,11 +251,7 @@ public class TypeTokenResolutionTest extends TestCase {
         TypeToken.of(StringIterable.class)
             .resolveType(Iterable.class.getTypeParameters()[0])
             .getType());
-    try {
-      TypeToken.of(this.getClass()).resolveType(null);
-      fail();
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> TypeToken.of(this.getClass()).resolveType(null));
   }
 
   public void testContextIsParameterizedType() throws Exception {
@@ -283,13 +282,13 @@ public class TypeTokenResolutionTest extends TestCase {
   public void testGenericArrayType() {
     GenericArray<?> genericArray = new GenericArray<>();
     assertEquals(GenericArray.class.getTypeParameters()[0], genericArray.t);
-    assertEquals(Types.newArrayType(genericArray.t), genericArray.array);
+    assertEquals(newArrayType(genericArray.t), genericArray.array);
   }
 
   public void testClassWrapper() {
     TypeToken<String> typeExpression = TypeToken.of(String.class);
     assertEquals(String.class, typeExpression.getType());
-    assertEquals(String.class, typeExpression.getRawType());
+    assertThat(typeExpression.getRawType()).isEqualTo(String.class);
   }
 
   private static class Red<A> {
@@ -330,25 +329,27 @@ public class TypeTokenResolutionTest extends TestCase {
     }
   }
 
+  @AndroidIncompatible // TODO(cpovirk): expected Integer but was String?
   public void test1() {
     Red<String> redString = new Red<String>() {};
     Red<Integer> redInteger = new Red<Integer>() {};
-    assertEquals(String.class, redString.getClassDirect());
-    assertEquals(Integer.class, redInteger.getClassDirect());
+    assertThat(redString.getClassDirect()).isEqualTo(String.class);
+    assertThat(redInteger.getClassDirect()).isEqualTo(Integer.class);
 
     Red<String>.Yellow<Integer> yellowInteger = redString.new Yellow<Integer>(redInteger) {};
-    assertEquals(Integer.class, yellowInteger.getClassA());
-    assertEquals(Integer.class, yellowInteger.getClassB());
-    assertEquals(String.class, yellowInteger.getA().getClassDirect());
-    assertEquals(Integer.class, yellowInteger.getB().getClassDirect());
+    assertThat(yellowInteger.getClassA()).isEqualTo(Integer.class);
+    assertThat(yellowInteger.getClassB()).isEqualTo(Integer.class);
+    assertThat(yellowInteger.getA().getClassDirect()).isEqualTo(String.class);
+    assertThat(yellowInteger.getB().getClassDirect()).isEqualTo(Integer.class);
   }
 
+  @AndroidIncompatible // TODO(cpovirk): expected Integer but was String?
   public void test2() {
     Red<String> redString = new Red<>();
     Red<Integer> redInteger = new Red<>();
     Red<String>.Yellow<Integer> yellowInteger = redString.new Yellow<Integer>(redInteger) {};
-    assertEquals(Integer.class, yellowInteger.getClassA());
-    assertEquals(Integer.class, yellowInteger.getClassB());
+    assertThat(yellowInteger.getClassA()).isEqualTo(Integer.class);
+    assertThat(yellowInteger.getClassB()).isEqualTo(Integer.class);
   }
 
   private static <T> Type staticMethodWithLocalClass() {
@@ -361,7 +362,7 @@ public class TypeTokenResolutionTest extends TestCase {
   }
 
   public void testLocalClassInsideStaticMethod() {
-    assertNotNull(staticMethodWithLocalClass());
+    assertThat(staticMethodWithLocalClass()).isNotNull();
   }
 
   public void testLocalClassInsideNonStaticMethod() {
@@ -370,7 +371,7 @@ public class TypeTokenResolutionTest extends TestCase {
         return new TypeToken<T>(getClass()) {}.getType();
       }
     }
-    assertNotNull(new MyLocalClass<String>().getType());
+    assertThat(new MyLocalClass<String>().getType()).isNotNull();
   }
 
   private static <T> Type staticMethodWithAnonymousClass() {
@@ -382,20 +383,21 @@ public class TypeTokenResolutionTest extends TestCase {
   }
 
   public void testAnonymousClassInsideStaticMethod() {
-    assertNotNull(staticMethodWithAnonymousClass());
+    assertThat(staticMethodWithAnonymousClass()).isNotNull();
   }
 
   public void testAnonymousClassInsideNonStaticMethod() {
-    assertNotNull(
-        new Object() {
-          Type getType() {
-            return new TypeToken<Object>() {}.getType();
-          }
-        }.getType());
+    assertThat(
+            new Object() {
+              Type getType() {
+                return new TypeToken<Object>() {}.getType();
+              }
+            }.getType())
+        .isNotNull();
   }
 
   public void testStaticContext() {
-    assertEquals(Map.class, mapType().getRawType());
+    assertThat(mapType().getRawType()).isEqualTo(Map.class);
   }
 
   private abstract static class Holder<T> {
@@ -414,25 +416,26 @@ public class TypeTokenResolutionTest extends TestCase {
         (GenericArrayType) new Holder<List<int[][]>[]>() {}.getContentType();
     ParameterizedType listType = (ParameterizedType) arrayType.getGenericComponentType();
     assertEquals(List.class, listType.getRawType());
-    assertEquals(Types.newArrayType(int[].class), listType.getActualTypeArguments()[0]);
+    assertEquals(newArrayType(int[].class), listType.getActualTypeArguments()[0]);
   }
 
+  @SuppressWarnings("UnusedVariable")
   private abstract class WithGenericBound<A> {
 
-    @SuppressWarnings("unused")
+    @Keep
     public <B extends A> void withTypeVariable(List<B> list) {}
 
-    @SuppressWarnings("unused")
+    @Keep
     public <E extends Enum<E>> void withRecursiveBound(List<E> list) {}
 
-    @SuppressWarnings("unused")
+    @Keep
     public <K extends List<V>, V extends List<K>> void withMutualRecursiveBound(
         List<Map<K, V>> list) {}
 
-    @SuppressWarnings("unused")
+    @Keep
     void withWildcardLowerBound(List<? super A> list) {}
 
-    @SuppressWarnings("unused")
+    @Keep
     void withWildcardUpperBound(List<? extends A> list) {}
 
     Type getTargetType(String methodName) throws Exception {
@@ -455,7 +458,7 @@ public class TypeTokenResolutionTest extends TestCase {
   public void testWithRecursiveBoundInTypeVariable() throws Exception {
     TypeVariable<?> typeVariable =
         (TypeVariable<?>) new WithGenericBound<String>() {}.getTargetType("withRecursiveBound");
-    assertEquals(Types.newParameterizedType(Enum.class, typeVariable), typeVariable.getBounds()[0]);
+    assertEquals(newParameterizedType(Enum.class, typeVariable), typeVariable.getBounds()[0]);
   }
 
   public void testWithMutualRecursiveBoundInTypeVariable() throws Exception {
@@ -464,8 +467,8 @@ public class TypeTokenResolutionTest extends TestCase {
             new WithGenericBound<String>() {}.getTargetType("withMutualRecursiveBound");
     TypeVariable<?> k = (TypeVariable<?>) paramType.getActualTypeArguments()[0];
     TypeVariable<?> v = (TypeVariable<?>) paramType.getActualTypeArguments()[1];
-    assertEquals(Types.newParameterizedType(List.class, v), k.getBounds()[0]);
-    assertEquals(Types.newParameterizedType(List.class, k), v.getBounds()[0]);
+    assertEquals(newParameterizedType(List.class, v), k.getBounds()[0]);
+    assertEquals(newParameterizedType(List.class, k), v.getBounds()[0]);
   }
 
   public void testWithGenericLowerBoundInWildcard() throws Exception {
@@ -480,7 +483,7 @@ public class TypeTokenResolutionTest extends TestCase {
     assertEquals(String.class, wildcardType.getUpperBounds()[0]);
   }
 
-  public void testInterfaceTypeParameterResolution() throws Exception {
+  public void testInterfaceTypeParameterResolution() {
     assertEquals(
         String.class,
         TypeToken.of(new TypeToken<ArrayList<String>>() {}.getType())
@@ -492,6 +495,7 @@ public class TypeTokenResolutionTest extends TestCase {
     return new TypeToken<Map<Object, Object>>() {};
   }
 
+  @SuppressWarnings("UnusedMethod")
   // Looks like recursive, but legit.
   private interface WithFalseRecursiveType<K, V> {
     WithFalseRecursiveType<List<V>, String> keyShouldNotResolveToStringList();
@@ -501,6 +505,7 @@ public class TypeTokenResolutionTest extends TestCase {
     SubtypeOfWithFalseRecursiveType<List<V>, List<K>> evenSubtypeWorks();
   }
 
+  @SuppressWarnings("UnusedMethod")
   private interface SubtypeOfWithFalseRecursiveType<K1, V1>
       extends WithFalseRecursiveType<List<K1>, List<V1>> {
     SubtypeOfWithFalseRecursiveType<V1, K1> revertKeyAndValueTypes();
@@ -511,21 +516,21 @@ public class TypeTokenResolutionTest extends TestCase {
         genericReturnType(WithFalseRecursiveType.class, "keyShouldNotResolveToStringList");
     TypeToken<?> keyType =
         TypeToken.of(returnType).resolveType(WithFalseRecursiveType.class.getTypeParameters()[0]);
-    assertEquals("java.util.List<V>", keyType.getType().toString());
+    assertThat(keyType.getType().toString()).isEqualTo("java.util.List<V>");
   }
 
   public void testFalseRecursiveType_notRealRecursiveMapping() {
     Type returnType = genericReturnType(WithFalseRecursiveType.class, "shouldNotCauseInfiniteLoop");
     TypeToken<?> keyType =
         TypeToken.of(returnType).resolveType(WithFalseRecursiveType.class.getTypeParameters()[0]);
-    assertEquals("java.util.List<K>", keyType.getType().toString());
+    assertThat(keyType.getType().toString()).isEqualTo("java.util.List<K>");
   }
 
   public void testFalseRecursiveType_referenceOfSubtypeDoesNotConfuseMe() {
     Type returnType = genericReturnType(WithFalseRecursiveType.class, "evenSubtypeWorks");
     TypeToken<?> keyType =
         TypeToken.of(returnType).resolveType(WithFalseRecursiveType.class.getTypeParameters()[0]);
-    assertEquals("java.util.List<java.util.List<V>>", keyType.getType().toString());
+    assertThat(keyType.getType().toString()).isEqualTo("java.util.List<java.util.List<V>>");
   }
 
   public void testFalseRecursiveType_intermediaryTypeMappingDoesNotConfuseMe() {
@@ -533,7 +538,7 @@ public class TypeTokenResolutionTest extends TestCase {
         genericReturnType(SubtypeOfWithFalseRecursiveType.class, "revertKeyAndValueTypes");
     TypeToken<?> keyType =
         TypeToken.of(returnType).resolveType(WithFalseRecursiveType.class.getTypeParameters()[0]);
-    assertEquals("java.util.List<K1>", keyType.getType().toString());
+    assertThat(keyType.getType().toString()).isEqualTo("java.util.List<K1>");
   }
 
   private static Type genericReturnType(Class<?> cls, String methodName) {

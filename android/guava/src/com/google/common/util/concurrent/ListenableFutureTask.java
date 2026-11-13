@@ -18,7 +18,6 @@ import static java.lang.Math.min;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -26,7 +25,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link FutureTask} that also implements the {@link ListenableFuture} interface. Unlike {@code
@@ -41,15 +40,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Sven Mawson
  * @since 1.0
  */
-@J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
-public class ListenableFutureTask<V extends @Nullable Object> extends FutureTask<V>
+public final class ListenableFutureTask<V extends @Nullable Object> extends FutureTask<V>
     implements ListenableFuture<V> {
-  // TODO(cpovirk): explore ways of making ListenableFutureTask final. There are some valid reasons
-  // such as BoundedQueueExecutorService to allow extends but it would be nice to make it final to
-  // avoid unintended usage.
-
   // The execution list to hold our listeners.
   private final ExecutionList executionList = new ExecutionList();
 

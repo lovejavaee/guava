@@ -16,12 +16,13 @@
 
 package com.google.common.collect;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.NoSuchElementException;
 import java.util.Queue;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A queue which forwards all its method calls to another queue. Subclasses should override one or
@@ -46,7 +47,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ForwardingQueue<E extends @Nullable Object> extends ForwardingCollection<E>
     implements Queue<E> {
 
@@ -64,8 +64,7 @@ public abstract class ForwardingQueue<E extends @Nullable Object> extends Forwar
 
   @CanIgnoreReturnValue // TODO(cpovirk): Consider removing this?
   @Override
-  @CheckForNull
-  public E poll() {
+  public @Nullable E poll() {
     return delegate().poll();
   }
 
@@ -77,8 +76,7 @@ public abstract class ForwardingQueue<E extends @Nullable Object> extends Forwar
   }
 
   @Override
-  @CheckForNull
-  public E peek() {
+  public @Nullable E peek() {
     return delegate().peek();
   }
 
@@ -108,8 +106,7 @@ public abstract class ForwardingQueue<E extends @Nullable Object> extends Forwar
    *
    * @since 7.0
    */
-  @CheckForNull
-  protected E standardPeek() {
+  protected @Nullable E standardPeek() {
     try {
       return element();
     } catch (NoSuchElementException caught) {
@@ -123,12 +120,33 @@ public abstract class ForwardingQueue<E extends @Nullable Object> extends Forwar
    *
    * @since 7.0
    */
-  @CheckForNull
-  protected E standardPoll() {
+  protected @Nullable E standardPoll() {
     try {
       return remove();
     } catch (NoSuchElementException caught) {
       return null;
+    }
+  }
+
+  /**
+   * A simplified version of {@link ForwardingQueue} where subclasses can pass in an already
+   * constructed {@link Queue} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingQueue<E extends @Nullable Object>
+      extends ForwardingQueue<E> {
+    private final Queue<E> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingQueue(Queue<E> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final Queue<E> delegate() {
+      return delegate;
     }
   }
 }

@@ -18,10 +18,11 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.io.Serializable;
 import java.math.BigInteger;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A wrapper class for unsigned {@code long} values, supporting arithmetic operations.
@@ -37,14 +38,18 @@ import javax.annotation.CheckForNull;
  * @author Colin Evans
  * @since 11.0
  */
-@GwtCompatible(serializable = true)
-@ElementTypesAreNonnullByDefault
-public final class UnsignedLong extends Number implements Comparable<UnsignedLong>, Serializable {
+@GwtCompatible
+public final class UnsignedLong extends Number implements Comparable<UnsignedLong> {
 
   private static final long UNSIGNED_MASK = 0x7fffffffffffffffL;
 
+  /** An {@code UnsignedLong} constant holding the value 0. */
   public static final UnsignedLong ZERO = new UnsignedLong(0);
+
+  /** An {@code UnsignedLong} constant holding the value 1. */
   public static final UnsignedLong ONE = new UnsignedLong(1);
+
+  /** An {@code UnsignedLong} constant holding the maximum value, 2^64 - 1. */
   public static final UnsignedLong MAX_VALUE = new UnsignedLong(-1L);
 
   private final long value;
@@ -238,11 +243,11 @@ public final class UnsignedLong extends Number implements Comparable<UnsignedLon
 
   @Override
   public int hashCode() {
-    return Longs.hashCode(value);
+    return Long.hashCode(value);
   }
 
   @Override
-  public boolean equals(@CheckForNull Object obj) {
+  public boolean equals(@Nullable Object obj) {
     if (obj instanceof UnsignedLong) {
       UnsignedLong other = (UnsignedLong) obj;
       return value == other.value;
@@ -264,4 +269,6 @@ public final class UnsignedLong extends Number implements Comparable<UnsignedLon
   public String toString(int radix) {
     return UnsignedLongs.toString(value, radix);
   }
+
+  @GwtIncompatible @J2ktIncompatible   private static final long serialVersionUID = 389107927943716141L;
 }

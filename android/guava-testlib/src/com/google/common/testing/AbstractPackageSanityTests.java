@@ -18,33 +18,35 @@ package com.google.common.testing;
 
 import static com.google.common.base.Predicates.and;
 import static com.google.common.base.Predicates.not;
+import static com.google.common.collect.Iterables.filter;
+import static com.google.common.collect.Maps.newTreeMap;
 import static com.google.common.testing.AbstractPackageSanityTests.Chopper.suffix;
+import static com.google.common.testing.SerializableTester.reserialize;
+import static com.google.common.testing.SerializableTester.reserializeAndAssert;
+import static java.util.Collections.sort;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
 import com.google.common.reflect.ClassPath;
 import com.google.common.testing.NullPointerTester.Visibility;
 import com.google.j2objc.annotations.J2ObjCIncompatible;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import junit.framework.AssertionFailedError;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.junit.Test;
 
 /**
@@ -101,11 +103,12 @@ import org.junit.Test;
  * @author Ben Yu
  * @since 14.0
  */
-@Beta
 // TODO: Switch to JUnit 4 and use @Parameterized and @BeforeClass
 // Note: @Test annotations are deliberate, as some subclasses specify @RunWith(JUnit4).
 @GwtIncompatible
+@J2ktIncompatible
 @J2ObjCIncompatible // com.google.common.reflect.ClassPath
+@NullMarked
 public abstract class AbstractPackageSanityTests extends TestCase {
 
   /**
@@ -195,9 +198,9 @@ public abstract class AbstractPackageSanityTests extends TestCase {
           Object instance = tester.instantiate(classToTest);
           if (instance != null) {
             if (isEqualsDefined(classToTest)) {
-              SerializableTester.reserializeAndAssert(instance);
+              reserializeAndAssert(instance);
             } else {
-              SerializableTester.reserialize(instance);
+              reserialize(instance);
             }
           }
         } catch (Throwable e) {
@@ -307,7 +310,7 @@ public abstract class AbstractPackageSanityTests extends TestCase {
     this.classFilter = and(this.classFilter, not(condition));
   }
 
-  private static AssertionFailedError sanityError(
+  private static AssertionError sanityError(
       Class<?> cls, List<String> explicitTestNames, String description, Throwable e) {
     String message =
         String.format(
@@ -318,9 +321,7 @@ public abstract class AbstractPackageSanityTests extends TestCase {
             cls,
             explicitTestNames.get(0),
             cls.getName());
-    AssertionFailedError error = new AssertionFailedError(message);
-    error.initCause(e);
-    return error;
+    return new AssertionError(message, e);
   }
 
   /**
@@ -328,20 +329,20 @@ public abstract class AbstractPackageSanityTests extends TestCase {
    * is {@code explicitTestNames}.
    */
   @VisibleForTesting
-  List<Class<?>> findClassesToTest(
+  final List<Class<?>> findClassesToTest(
       Iterable<? extends Class<?>> classes, Iterable<String> explicitTestNames) {
     // "a.b.Foo" -> a.b.Foo.class
-    TreeMap<String, Class<?>> classMap = Maps.newTreeMap();
+    TreeMap<String, Class<?>> classMap = newTreeMap();
     for (Class<?> cls : classes) {
       classMap.put(cls.getName(), cls);
     }
     // Foo.class -> [FooTest.class, FooTests.class, FooTestSuite.class, ...]
     Multimap<Class<?>, Class<?>> testClasses = HashMultimap.create();
-    LinkedHashSet<Class<?>> candidateClasses = Sets.newLinkedHashSet();
+    LinkedHashSet<Class<?>> candidateClasses = new LinkedHashSet<>();
     for (Class<?> cls : classes) {
-      Optional<String> testedClassName = TEST_SUFFIX.chop(cls.getName());
-      if (testedClassName.isPresent()) {
-        Class<?> testedClass = classMap.get(testedClassName.get());
+      String testedClassName = TEST_SUFFIX.chop(cls.getName());
+      if (testedClassName != null) {
+        Class<?> testedClass = classMap.get(testedClassName);
         if (testedClass != null) {
           testClasses.put(testedClass, cls);
         }
@@ -349,9 +350,9 @@ public abstract class AbstractPackageSanityTests extends TestCase {
         candidateClasses.add(cls);
       }
     }
-    List<Class<?>> result = Lists.newArrayList();
+    List<Class<?>> result = new ArrayList<>();
     NEXT_CANDIDATE:
-    for (Class<?> candidate : Iterables.filter(candidateClasses, classFilter)) {
+    for (Class<?> candidate : filter(candidateClasses, classFilter)) {
       for (Class<?> testClass : testClasses.get(candidate)) {
         if (hasTest(testClass, explicitTestNames)) {
           // covered by explicit test
@@ -364,7 +365,7 @@ public abstract class AbstractPackageSanityTests extends TestCase {
   }
 
   private List<Class<?>> loadClassesInPackage() throws IOException {
-    List<Class<?>> classes = Lists.newArrayList();
+    List<Class<?>> classes = new ArrayList<>();
     String packageName = getClass().getPackage().getName();
     for (ClassPath.ClassInfo classInfo :
         ClassPath.from(getClass().getClassLoader()).getTopLevelClasses(packageName)) {
@@ -380,6 +381,7 @@ public abstract class AbstractPackageSanityTests extends TestCase {
         classes.add(cls);
       }
     }
+    sort(classes, (a, b) -> a.getName().compareTo(b.getName()));
     return classes;
   }
 
@@ -409,22 +411,23 @@ public abstract class AbstractPackageSanityTests extends TestCase {
       Chopper i = this;
       return new Chopper() {
         @Override
-        Optional<String> chop(String str) {
-          return i.chop(str).or(you.chop(str));
+        @Nullable String chop(String str) {
+          String result = i.chop(str);
+          return result != null ? result : you.chop(str);
         }
       };
     }
 
-    abstract Optional<String> chop(String str);
+    abstract @Nullable String chop(String str);
 
     static Chopper suffix(String suffix) {
       return new Chopper() {
         @Override
-        Optional<String> chop(String str) {
+        @Nullable String chop(String str) {
           if (str.endsWith(suffix)) {
-            return Optional.of(str.substring(0, str.length() - suffix.length()));
+            return str.substring(0, str.length() - suffix.length());
           } else {
-            return Optional.absent();
+            return null;
           }
         }
       };

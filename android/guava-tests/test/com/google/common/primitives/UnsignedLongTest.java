@@ -14,24 +14,28 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.testing.SerializableTester.reserializeAndAssert;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.testing.EqualsTester;
 import com.google.common.testing.NullPointerTester;
-import com.google.common.testing.SerializableTester;
 import java.math.BigInteger;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Tests for {@code UnsignedLong}.
  *
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullUnmarked
 public class UnsignedLongTest extends TestCase {
   private static final ImmutableSet<Long> TEST_LONGS;
   private static final ImmutableSet<BigInteger> TEST_BIG_INTEGERS;
@@ -147,20 +151,18 @@ public class UnsignedLongTest extends TestCase {
   public void testFloatValue() {
     for (long value : TEST_LONGS) {
       UnsignedLong unsignedValue = UnsignedLong.fromLongBits(value);
-      assertWithMessage("Float value of " + unsignedValue)
+      assertWithMessage("Float value of %s", unsignedValue)
           .that(unsignedValue.floatValue())
-          .isWithin(0.0f)
-          .of(unsignedValue.bigIntegerValue().floatValue());
+          .isEqualTo(unsignedValue.bigIntegerValue().floatValue());
     }
   }
 
   public void testDoubleValue() {
     for (long value : TEST_LONGS) {
       UnsignedLong unsignedValue = UnsignedLong.fromLongBits(value);
-      assertWithMessage("Double value of " + unsignedValue)
+      assertWithMessage("Double value of %s", unsignedValue)
           .that(unsignedValue.doubleValue())
-          .isWithin(0.0)
-          .of(unsignedValue.bigIntegerValue().doubleValue());
+          .isEqualTo(unsignedValue.bigIntegerValue().doubleValue());
     }
   }
 
@@ -219,11 +221,9 @@ public class UnsignedLongTest extends TestCase {
 
   public void testDivideByZeroThrows() {
     for (long a : TEST_LONGS) {
-      try {
-        UnsignedLong.fromLongBits(a).dividedBy(UnsignedLong.ZERO);
-        fail("Expected ArithmeticException");
-      } catch (ArithmeticException expected) {
-      }
+      assertThrows(
+          ArithmeticException.class,
+          () -> UnsignedLong.fromLongBits(a).dividedBy(UnsignedLong.ZERO));
     }
   }
 
@@ -244,11 +244,8 @@ public class UnsignedLongTest extends TestCase {
 
   public void testModByZero() {
     for (long a : TEST_LONGS) {
-      try {
-        UnsignedLong.fromLongBits(a).mod(UnsignedLong.ZERO);
-        fail("Expected ArithmeticException");
-      } catch (ArithmeticException expected) {
-      }
+      assertThrows(
+          ArithmeticException.class, () -> UnsignedLong.fromLongBits(a).mod(UnsignedLong.ZERO));
     }
   }
 
@@ -286,13 +283,15 @@ public class UnsignedLongTest extends TestCase {
     }
   }
 
-  @GwtIncompatible // serialization
+  @GwtIncompatible
+  @J2ktIncompatible
   public void testSerialization() {
     for (long a : TEST_LONGS) {
-      SerializableTester.reserializeAndAssert(UnsignedLong.fromLongBits(a));
+      reserializeAndAssert(UnsignedLong.fromLongBits(a));
     }
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(UnsignedLong.class);

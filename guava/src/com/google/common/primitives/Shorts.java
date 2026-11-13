@@ -18,20 +18,25 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
+import static java.lang.Math.floorMod;
+import static java.lang.System.arraycopy;
+import static java.util.Arrays.sort;
+import static java.util.Collections.emptyList;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Converter;
+import com.google.errorprone.annotations.InlineMe;
+import com.google.errorprone.annotations.InlineMeValidationDisabled;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.RandomAccess;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utility methods pertaining to {@code short} primitives, that are not already found in
@@ -43,17 +48,16 @@ import javax.annotation.CheckForNull;
  * @author Kevin Bourrillion
  * @since 1.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class Shorts extends ShortsMethodsForWeb {
   private Shorts() {}
 
   /**
    * The number of bytes required to represent a primitive {@code short} value.
    *
-   * <p><b>Java 8 users:</b> use {@link Short#BYTES} instead.
+   * <p>Prefer {@link Short#BYTES} instead.
    */
-  public static final int BYTES = Short.SIZE / Byte.SIZE;
+  public static final int BYTES = Short.BYTES;
 
   /**
    * The largest power of two that can be represented as a {@code short}.
@@ -63,14 +67,15 @@ public final class Shorts extends ShortsMethodsForWeb {
   public static final short MAX_POWER_OF_TWO = 1 << (Short.SIZE - 2);
 
   /**
-   * Returns a hash code for {@code value}; equal to the result of invoking {@code ((Short)
-   * value).hashCode()}.
-   *
-   * <p><b>Java 8 users:</b> use {@link Short#hashCode(short)} instead.
+   * Returns a hash code for {@code value}; obsolete alternative to {@link Short#hashCode(short)}.
    *
    * @param value a primitive {@code short} value
    * @return a hash code for the value
    */
+  @InlineMe(replacement = "Short.hashCode(value)")
+  @InlineMeValidationDisabled(
+      "The hash code of a short is the int version of the short itself, so it's simplest to return"
+          + " that.")
   public static int hashCode(short value) {
     return value;
   }
@@ -110,7 +115,7 @@ public final class Shorts extends ShortsMethodsForWeb {
    * Compares the two specified {@code short} values. The sign of the value returned is the same as
    * that of {@code ((Short) a).compareTo(b)}.
    *
-   * <p><b>Note for Java 7 and later:</b> this method should be treated as deprecated; use the
+   * <p><b>Note:</b> this method is now unnecessary and should be treated as deprecated; use the
    * equivalent {@link Short#compare} method instead.
    *
    * @param a the first {@code short} to compare
@@ -118,8 +123,9 @@ public final class Shorts extends ShortsMethodsForWeb {
    * @return a negative value if {@code a} is less than {@code b}; a positive value if {@code a} is
    *     greater than {@code b}; or zero if they are equal
    */
+  @InlineMe(replacement = "Short.compare(a, b)")
   public static int compare(short a, short b) {
-    return a - b; // safe due to restricted range
+    return Short.compare(a, b);
   }
 
   /**
@@ -150,9 +156,20 @@ public final class Shorts extends ShortsMethodsForWeb {
     return indexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int indexOf(short[] array, short target, int start, int end) {
-    for (int i = start; i < end; i++) {
+  /**
+   * Returns the index of the first appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the least index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i] ==
+   *     target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(short[] array, short target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = fromIndex; i < toIndex; i++) {
       if (array[i] == target) {
         return i;
       }
@@ -171,14 +188,32 @@ public final class Shorts extends ShortsMethodsForWeb {
    * @param target the array to search for as a sub-sequence of {@code array}
    */
   public static int indexOf(short[] array, short[] target) {
+    return indexOf(array, target, 0, array.length);
+  }
+
+  /**
+   * Returns the start position of the first occurrence of the specified {@code target} within
+   * {@code array} between {@code fromIndex} inclusive and {@code toIndex} exclusive, or {@code -1}
+   * if there is no such occurrence.
+   *
+   * <p>More formally, returns the lowest index {@code i} such that {@code i >= fromIndex}, {@code i
+   * + target.length <= toIndex}, and {@code Arrays.copyOfRange(array, i, i + target.length)}
+   * contains exactly the same elements as {@code target}.
+   *
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(short[] array, short[] target, int fromIndex, int toIndex) {
     checkNotNull(array, "array");
     checkNotNull(target, "target");
+    checkPositionIndexes(fromIndex, toIndex, array.length);
     if (target.length == 0) {
-      return 0;
+      return fromIndex;
     }
 
     outer:
-    for (int i = 0; i < array.length - target.length + 1; i++) {
+    for (int i = fromIndex; i < toIndex - target.length + 1; i++) {
       for (int j = 0; j < target.length; j++) {
         if (array[i + j] != target[j]) {
           continue outer;
@@ -201,9 +236,20 @@ public final class Shorts extends ShortsMethodsForWeb {
     return lastIndexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int lastIndexOf(short[] array, short target, int start, int end) {
-    for (int i = end - 1; i >= start; i--) {
+  /**
+   * Returns the index of the last appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the greatest index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i]
+   *     == target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int lastIndexOf(short[] array, short target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = toIndex - 1; i >= fromIndex; i--) {
       if (array[i] == target) {
         return i;
       }
@@ -266,7 +312,6 @@ public final class Shorts extends ShortsMethodsForWeb {
    * @throws IllegalArgumentException if {@code min > max}
    * @since 21.0
    */
-  @Beta
   public static short constrainToRange(short value, short min, short max) {
     checkArgument(min <= max, "min (%s) must be less than or equal to max (%s)", min, max);
     return value < min ? min : value < max ? value : max;
@@ -279,19 +324,29 @@ public final class Shorts extends ShortsMethodsForWeb {
    *
    * @param arrays zero or more {@code short} arrays
    * @return a single array containing all the values from the source arrays, in order
+   * @throws IllegalArgumentException if the total number of elements in {@code arrays} does not fit
+   *     in an {@code int}
    */
   public static short[] concat(short[]... arrays) {
-    int length = 0;
+    long length = 0;
     for (short[] array : arrays) {
       length += array.length;
     }
-    short[] result = new short[length];
+    short[] result = new short[checkNoOverflow(length)];
     int pos = 0;
     for (short[] array : arrays) {
-      System.arraycopy(array, 0, result, pos, array.length);
+      arraycopy(array, 0, result, pos, array.length);
       pos += array.length;
     }
     return result;
+  }
+
+  private static int checkNoOverflow(long result) {
+    checkArgument(
+        result == (int) result,
+        "the total number of elements (%s) in the arrays must fit in an int",
+        result);
+    return (int) result;
   }
 
   /**
@@ -337,7 +392,7 @@ public final class Shorts extends ShortsMethodsForWeb {
 
   private static final class ShortConverter extends Converter<String, Short>
       implements Serializable {
-    static final ShortConverter INSTANCE = new ShortConverter();
+    static final Converter<String, Short> INSTANCE = new ShortConverter();
 
     @Override
     protected Short doForward(String value) {
@@ -358,7 +413,7 @@ public final class Shorts extends ShortsMethodsForWeb {
       return INSTANCE;
     }
 
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
   }
 
   /**
@@ -372,7 +427,6 @@ public final class Shorts extends ShortsMethodsForWeb {
    *
    * @since 16.0
    */
-  @Beta
   public static Converter<String, Short> stringConverter() {
     return ShortConverter.INSTANCE;
   }
@@ -444,7 +498,7 @@ public final class Shorts extends ShortsMethodsForWeb {
     public int compare(short[] left, short[] right) {
       int minLength = Math.min(left.length, right.length);
       for (int i = 0; i < minLength; i++) {
-        int result = Shorts.compare(left[i], right[i]);
+        int result = Short.compare(left[i], right[i]);
         if (result != 0) {
           return result;
         }
@@ -477,7 +531,7 @@ public final class Shorts extends ShortsMethodsForWeb {
   public static void sortDescending(short[] array, int fromIndex, int toIndex) {
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    Arrays.sort(array, fromIndex, toIndex);
+    sort(array, fromIndex, toIndex);
     reverse(array, fromIndex, toIndex);
   }
 
@@ -520,7 +574,7 @@ public final class Shorts extends ShortsMethodsForWeb {
    *
    * <p>The provided "distance" may be negative, which will rotate left.
    *
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(short[] array, int distance) {
     rotate(array, distance, 0, array.length);
@@ -536,26 +590,24 @@ public final class Shorts extends ShortsMethodsForWeb {
    *
    * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
    *     {@code toIndex > fromIndex}
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(short[] array, int distance, int fromIndex, int toIndex) {
     // See Ints.rotate for more details about possible algorithms here.
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    if (array.length <= 1) {
+    int length = toIndex - fromIndex;
+    if (length <= 1) {
       return;
     }
 
-    int length = toIndex - fromIndex;
-    // Obtain m = (-distance mod length), a non-negative value less than "length". This is how many
-    // places left to rotate.
-    int m = -distance % length;
-    m = (m < 0) ? m + length : m;
-    // The current index of what will become the first element of the rotated section.
-    int newFirstIndex = m + fromIndex;
-    if (newFirstIndex == fromIndex) {
+    // Map the given distance to an equivalent, non-negative value less than "length".
+    distance = floorMod(distance, length);
+    if (distance == 0) {
       return;
     }
+    // The current index of what will become the first element of the rotated section.
+    int newFirstIndex = toIndex - distance;
 
     reverse(array, fromIndex, newFirstIndex);
     reverse(array, newFirstIndex, toIndex);
@@ -606,13 +658,12 @@ public final class Shorts extends ShortsMethodsForWeb {
    */
   public static List<Short> asList(short... backingArray) {
     if (backingArray.length == 0) {
-      return Collections.emptyList();
+      return emptyList();
     }
     return new ShortArrayAsList(backingArray);
   }
 
-  @GwtCompatible
-  private static class ShortArrayAsList extends AbstractList<Short>
+  private static final class ShortArrayAsList extends AbstractList<Short>
       implements RandomAccess, Serializable {
     final short[] array;
     final int start;
@@ -645,13 +696,13 @@ public final class Shorts extends ShortsMethodsForWeb {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object target) {
+    public boolean contains(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       return (target instanceof Short) && Shorts.indexOf(array, (Short) target, start, end) != -1;
     }
 
     @Override
-    public int indexOf(@CheckForNull Object target) {
+    public int indexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Short) {
         int i = Shorts.indexOf(array, (Short) target, start, end);
@@ -663,7 +714,7 @@ public final class Shorts extends ShortsMethodsForWeb {
     }
 
     @Override
-    public int lastIndexOf(@CheckForNull Object target) {
+    public int lastIndexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Short) {
         int i = Shorts.lastIndexOf(array, (Short) target, start, end);
@@ -688,13 +739,13 @@ public final class Shorts extends ShortsMethodsForWeb {
       int size = size();
       checkPositionIndexes(fromIndex, toIndex, size);
       if (fromIndex == toIndex) {
-        return Collections.emptyList();
+        return emptyList();
       }
       return new ShortArrayAsList(array, start + fromIndex, start + toIndex);
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object == this) {
         return true;
       }
@@ -718,7 +769,7 @@ public final class Shorts extends ShortsMethodsForWeb {
     public int hashCode() {
       int result = 1;
       for (int i = start; i < end; i++) {
-        result = 31 * result + Shorts.hashCode(array[i]);
+        result = 31 * result + Short.hashCode(array[i]);
       }
       return result;
     }
@@ -737,6 +788,6 @@ public final class Shorts extends ShortsMethodsForWeb {
       return Arrays.copyOfRange(array, start, end);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 }

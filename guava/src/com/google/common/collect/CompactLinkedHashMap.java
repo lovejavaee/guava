@@ -22,7 +22,6 @@ import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.j2objc.annotations.WeakOuter;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -30,8 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.Spliterators;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * CompactLinkedHashMap is an implementation of a Map with insertion or LRU iteration order,
@@ -55,8 +53,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  */
 @J2ktIncompatible // no support for access-order mode in LinkedHashMap delegate
 @GwtIncompatible // not worth using in GWT for now
-@ElementTypesAreNonnullByDefault
-class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Object>
+final class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Object>
     extends CompactHashMap<K, V> {
   // TODO(lowasser): implement removeEldestEntry so this can be used as a drop-in replacement
 
@@ -91,7 +88,7 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
    * <p>A node with "prev" pointer equal to {@code ENDPOINT} is the first node in the linked list,
    * and a node with "next" pointer equal to {@code ENDPOINT} is the last node.
    */
-  @CheckForNull @VisibleForTesting transient long[] links;
+  @VisibleForTesting transient long @Nullable [] links;
 
   /** Pointer to the first node in the linked list, or {@code ENDPOINT} if there are no entries. */
   private transient int firstEntry;
@@ -130,7 +127,7 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
 
   @Override
   Map<K, V> createHashFloodingResistantDelegate(int tableSize) {
-    return new LinkedHashMap<K, V>(tableSize, 1.0f, accessOrder);
+    return new LinkedHashMap<>(tableSize, 1.0f, accessOrder);
   }
 
   @Override
@@ -157,7 +154,7 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
   }
 
   private void setSuccessor(int entry, int succ) {
-    long succMask = (~0L) >>> 32;
+    long succMask = ~0L >>> 32;
     setLink(entry, (link(entry) & ~succMask) | ((succ + 1) & succMask));
   }
 
@@ -230,9 +227,8 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
   }
 
   @Override
-  Set<Entry<K, V>> createEntrySet() {
-    @WeakOuter
-    class EntrySetImpl extends EntrySetView {
+  public Set<Entry<K, V>> entrySet() {
+    final class EntrySetImpl extends EntrySetView {
       @Override
       public Spliterator<Entry<K, V>> spliterator() {
         return Spliterators.spliterator(this, Spliterator.ORDERED | Spliterator.DISTINCT);
@@ -242,9 +238,8 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
   }
 
   @Override
-  Set<K> createKeySet() {
-    @WeakOuter
-    class KeySetImpl extends KeySetView {
+  public Set<K> keySet() {
+    final class KeySetImpl extends KeySetView {
       @Override
       public @Nullable Object[] toArray() {
         return ObjectArrays.toArrayImpl(this);
@@ -265,9 +260,8 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
   }
 
   @Override
-  Collection<V> createValues() {
-    @WeakOuter
-    class ValuesImpl extends ValuesView {
+  public Collection<V> values() {
+    final class ValuesImpl extends ValuesView {
       @Override
       public @Nullable Object[] toArray() {
         return ObjectArrays.toArrayImpl(this);
@@ -322,4 +316,6 @@ class CompactLinkedHashMap<K extends @Nullable Object, V extends @Nullable Objec
    * they're defined above -- including logic to add and subtract 1 to map between the values stored
    * in the predecessor/successor arrays and the indexes in the elements array that they identify.
    */
+
+  private static final long serialVersionUID = 2360971274758481122L;
 }

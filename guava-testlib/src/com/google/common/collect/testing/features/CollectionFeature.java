@@ -16,8 +16,9 @@
 
 package com.google.common.collect.testing.features;
 
+import static com.google.common.collect.testing.Helpers.copyToSet;
+
 import com.google.common.annotations.GwtCompatible;
-import com.google.common.collect.testing.Helpers;
 import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -31,8 +32,7 @@ import java.util.SortedSet;
  *
  * @author George van den Driessche
  */
-// Enum values use constructors with generic varargs.
-@SuppressWarnings("unchecked")
+@SuppressWarnings("rawtypes") // maybe avoidable if we rework the whole package?
 @GwtCompatible
 public enum CollectionFeature implements Feature<Collection> {
   /**
@@ -48,11 +48,9 @@ public enum CollectionFeature implements Feature<Collection> {
    * documentation for {@link Collection}:
    *
    * <blockquote>
-   *
    * "Some collection implementations have restrictions on the elements that they may contain. For
    * example, some implementations prohibit null elements, and some have restrictions on the types
    * of their elements."
-   *
    * </blockquote>
    */
   RESTRICTS_ELEMENTS,
@@ -109,7 +107,7 @@ public enum CollectionFeature implements Feature<Collection> {
   private final Set<Feature<? super Collection>> implied;
 
   CollectionFeature(Feature<? super Collection>... implied) {
-    this.implied = Helpers.copyToSet(implied);
+    this.implied = copyToSet(implied);
   }
 
   @Override

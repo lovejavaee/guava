@@ -16,11 +16,12 @@ package com.google.common.base;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.io.Serializable;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Equivalence applied on functional result.
@@ -28,12 +29,10 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Bob Lee
  * @since 10.0
  */
-@Beta
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 final class FunctionalEquivalence<F, T> extends Equivalence<F> implements Serializable {
 
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 
   private final Function<? super F, ? extends @Nullable T> function;
   private final Equivalence<T> resultEquivalence;
@@ -55,7 +54,7 @@ final class FunctionalEquivalence<F, T> extends Equivalence<F> implements Serial
   }
 
   @Override
-  public boolean equals(@CheckForNull Object obj) {
+  public boolean equals(@Nullable Object obj) {
     if (obj == this) {
       return true;
     }
@@ -68,7 +67,7 @@ final class FunctionalEquivalence<F, T> extends Equivalence<F> implements Serial
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(function, resultEquivalence);
+    return Objects.hash(function, resultEquivalence);
   }
 
   @Override

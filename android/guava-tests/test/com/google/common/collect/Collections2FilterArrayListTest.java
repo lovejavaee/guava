@@ -16,15 +16,19 @@
 
 package com.google.common.collect;
 
+import static com.google.common.collect.Lists.newArrayList;
+
 import com.google.common.base.Predicate;
 import com.google.common.collect.FilteredCollectionsTestUtil.AbstractFilteredCollectionTest;
 import java.util.Collection;
+import org.jspecify.annotations.NullUnmarked;
 
+@NullUnmarked
 public final class Collections2FilterArrayListTest
     extends AbstractFilteredCollectionTest<Collection<Integer>> {
   @Override
   Collection<Integer> createUnfiltered(Iterable<Integer> contents) {
-    return Lists.newArrayList(contents);
+    return newArrayList(contents);
   }
 
   @Override

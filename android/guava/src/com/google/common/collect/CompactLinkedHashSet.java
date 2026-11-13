@@ -19,13 +19,13 @@ package com.google.common.collect;
 import static java.util.Objects.requireNonNull;
 
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * CompactLinkedHashSet is an implementation of a Set, which a predictable iteration order that
@@ -49,8 +49,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Louis Wasserman
  */
 @GwtIncompatible // not worth using in GWT for now
-@ElementTypesAreNonnullByDefault
-class CompactLinkedHashSet<E extends @Nullable Object> extends CompactHashSet<E> {
+final class CompactLinkedHashSet<E extends @Nullable Object> extends CompactHashSet<E> {
 
   /** Creates an empty {@code CompactLinkedHashSet} instance. */
   public static <E extends @Nullable Object> CompactLinkedHashSet<E> create() {
@@ -109,13 +108,13 @@ class CompactLinkedHashSet<E extends @Nullable Object> extends CompactHashSet<E>
    * Pointer to the predecessor of an entry in insertion order. ENDPOINT indicates a node is the
    * first node in insertion order; all values at indices ≥ {@link #size()} are UNSET.
    */
-  @CheckForNull private transient int[] predecessor;
+  private transient int @Nullable [] predecessor;
 
   /**
    * Pointer to the successor of an entry in insertion order. ENDPOINT indicates a node is the last
    * node in insertion order; all values at indices ≥ {@link #size()} are UNSET.
    */
-  @CheckForNull private transient int[] successor;
+  private transient int @Nullable [] successor;
 
   /** Pointer to the first node in the linked list, or {@code ENDPOINT} if there are no entries. */
   private transient int firstEntry;
@@ -123,9 +122,7 @@ class CompactLinkedHashSet<E extends @Nullable Object> extends CompactHashSet<E>
   /** Pointer to the last node in the linked list, or {@code ENDPOINT} if there are no entries. */
   private transient int lastEntry;
 
-  CompactLinkedHashSet() {
-    super();
-  }
+  CompactLinkedHashSet() {}
 
   CompactLinkedHashSet(int expectedSize) {
     super(expectedSize);
@@ -274,4 +271,6 @@ class CompactLinkedHashSet<E extends @Nullable Object> extends CompactHashSet<E>
    * they're defined above -- including logic to add and subtract 1 to map between the values stored
    * in the predecessor/successor arrays and the indexes in the elements array that they identify.
    */
+
+  @J2ktIncompatible private static final long serialVersionUID = -3537819119711266145L;
 }

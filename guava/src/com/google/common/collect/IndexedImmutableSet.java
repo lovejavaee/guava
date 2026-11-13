@@ -20,12 +20,12 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.util.Spliterator;
 import java.util.function.Consumer;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 abstract class IndexedImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
   abstract E get(int index);
 
@@ -63,19 +63,27 @@ abstract class IndexedImmutableSet<E> extends ImmutableSet.CachingAsList<E> {
       }
 
       @Override
-      boolean isPartialView() {
-        return IndexedImmutableSet.this.isPartialView();
-      }
-
-      @Override
-      public int size() {
-        return IndexedImmutableSet.this.size();
-      }
-
-      @Override
       ImmutableCollection<E> delegateCollection() {
         return IndexedImmutableSet.this;
       }
+
+      // redeclare to help optimizers with b/310253115
+      @SuppressWarnings("RedundantOverride")
+      @Override
+      @J2ktIncompatible
+      @GwtIncompatible
+            Object writeReplace() {
+        return super.writeReplace();
+      }
     };
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

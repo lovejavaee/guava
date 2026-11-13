@@ -16,6 +16,7 @@ package com.google.common.util.concurrent;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.util.concurrent.Internal.toNanosSaturated;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
@@ -23,28 +24,29 @@ import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Function;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.DoNotMock;
+import com.google.errorprone.annotations.InlineMe;
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link ListenableFuture} that supports fluent chains of operations. For example:
  *
- * <pre>{@code
+ * {@snippet :
  * ListenableFuture<Boolean> adminIsLoggedIn =
  *     FluentFuture.from(usersDatabase.getAdminUser())
  *         .transform(User::getId, directExecutor())
  *         .transform(ActivityService::isLoggedIn, threadPool)
  *         .catching(RpcException.class, e -> false, directExecutor());
- * }</pre>
+ * }
  *
- * <h3>Alternatives</h3>
+ * <h2>Alternatives</h2>
  *
- * <h4>Frameworks</h4>
+ * <h3>Frameworks</h3>
  *
  * <p>When chaining together a graph of asynchronous operations, you will often find it easier to
  * use a framework. Frameworks automate the process, often adding features like monitoring,
@@ -54,27 +56,32 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *   <li><a href="https://dagger.dev/producers.html">Dagger Producers</a>
  * </ul>
  *
- * <h4>{@link java.util.concurrent.CompletableFuture} / {@link java.util.concurrent.CompletionStage}
- * </h4>
+ * <h3>{@link java.util.CompletableFuture} / {@link java.util.concurrent.CompletionStage} </h3>
  *
  * <p>Users of {@code CompletableFuture} will likely want to continue using {@code
- * CompletableFuture}. {@code FluentFuture} is targeted at people who use {@code ListenableFuture},
- * who can't use Java 8, or who want an API more focused than {@code CompletableFuture}. (If you
- * need to adapt between {@code CompletableFuture} and {@code ListenableFuture}, consider <a
- * href="https://github.com/lukas-krecan/future-converter">Future Converter</a>.)
+ * CompletableFuture}. {@link FluentFuture} is targeted at people who use {@link ListenableFuture},
+ * who can't use Java 8, or who want an API more focused than {@code CompletableFuture}. If you need
+ * to adapt between {@code CompletableFuture} and {@link ListenableFuture}, consider <a
+ * href="https://github.com/lukas-krecan/future-converter">Future Converter</a>.
  *
- * <h3>Extension</h3>
+ * <h3>{@link ClosingFuture}</h3>
  *
- * If you want a class like {@code FluentFuture} but with extra methods, we recommend declaring your
+ * <p>If the steps of your pipeline create objects that must be closed when the computation is done,
+ * such as database connections or file handles, use {@link ClosingFuture}. It supports the same
+ * kinds of derived steps as {@link FluentFuture} but closes those objects once the pipeline
+ * completes, fails, or is cancelled.
+ *
+ * <h2>Extension</h2>
+ *
+ * If you want a class like {@link FluentFuture} but with extra methods, we recommend declaring your
  * own subclass of {@link ListenableFuture}, complete with a method like {@link #from} to adapt an
- * existing {@code ListenableFuture}, implemented atop a {@link ForwardingListenableFuture} that
+ * existing {@link ListenableFuture}, implemented atop a {@link ForwardingListenableFuture} that
  * forwards to that future and adds the desired methods.
  *
  * @since 23.0
  */
 @DoNotMock("Use FluentFuture.from(Futures.immediate*Future) or SettableFuture")
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public abstract class FluentFuture<V extends @Nullable Object>
     extends GwtFluentFutureCatchingSpecialization<V> {
 
@@ -83,7 +90,7 @@ public abstract class FluentFuture<V extends @Nullable Object>
    * that {@link #get} calls exactly the implementation of {@link AbstractFuture#get}.
    */
   abstract static class TrustedFuture<V extends @Nullable Object> extends FluentFuture<V>
-      implements AbstractFuture.Trusted<V> {
+      implements Trusted<V> {
     @CanIgnoreReturnValue
     @Override
     @ParametricNullness
@@ -142,6 +149,9 @@ public abstract class FluentFuture<V extends @Nullable Object>
    * @deprecated no need to use this
    * @since 28.0
    */
+  @InlineMe(
+      replacement = "checkNotNull(future)",
+      staticImports = "com.google.common.base.Preconditions.checkNotNull")
   @Deprecated
   public static <V extends @Nullable Object> FluentFuture<V> from(FluentFuture<V> future) {
     return checkNotNull(future);
@@ -156,12 +166,12 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *
    * <p>Usage example:
    *
-   * <pre>{@code
+   * {@snippet :
    * // Falling back to a zero counter in case an exception happens when processing the RPC to fetch
    * // counters.
    * ListenableFuture<Integer> faultTolerantFuture =
    *     fetchCounters().catching(FetchException.class, x -> 0, directExecutor());
-   * }</pre>
+   * }
    *
    * <p>When selecting an executor, note that {@code directExecutor} is dangerous in some cases. See
    * the discussion in the {@link #addListener} documentation. All its warnings about heavyweight
@@ -200,17 +210,17 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *
    * <p>Usage examples:
    *
-   * <pre>{@code
+   * {@snippet :
    * // Falling back to a zero counter in case an exception happens when processing the RPC to fetch
    * // counters.
    * ListenableFuture<Integer> faultTolerantFuture =
    *     fetchCounters().catchingAsync(
    *         FetchException.class, x -> immediateFuture(0), directExecutor());
-   * }</pre>
+   * }
    *
    * <p>The fallback can also choose to propagate the original exception when desired:
    *
-   * <pre>{@code
+   * {@snippet :
    * // Falling back to a zero counter only in case the exception was a
    * // TimeoutException.
    * ListenableFuture<Integer> faultTolerantFuture =
@@ -223,7 +233,7 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *           throw e;
    *         },
    *         directExecutor());
-   * }</pre>
+   * }
    *
    * <p>When selecting an executor, note that {@code directExecutor} is dangerous in some cases. See
    * the discussion in the {@link #addListener} documentation. All its warnings about heavyweight
@@ -264,13 +274,13 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *
    * @param timeout when to time out the future
    * @param scheduledExecutor The executor service to enforce the timeout.
-   * @since 28.0
+   * @since 28.0 (but only since 33.4.0 in the Android flavor)
    */
   @J2ktIncompatible
   @GwtIncompatible // ScheduledExecutorService
   public final FluentFuture<V> withTimeout(
       Duration timeout, ScheduledExecutorService scheduledExecutor) {
-    return withTimeout(toNanosSaturated(timeout), TimeUnit.NANOSECONDS, scheduledExecutor);
+    return withTimeout(toNanosSaturated(timeout), NANOSECONDS, scheduledExecutor);
   }
 
   /**
@@ -294,17 +304,18 @@ public abstract class FluentFuture<V extends @Nullable Object>
   /**
    * Returns a new {@code Future} whose result is asynchronously derived from the result of this
    * {@code Future}. If the input {@code Future} fails, the returned {@code Future} fails with the
-   * same exception (and the function is not invoked).
+   * same exception (and the function is not invoked). If the function throws an exception, the
+   * returned {@code Future} fails with that exception.
    *
    * <p>More precisely, the returned {@code Future} takes its result from a {@code Future} produced
    * by applying the given {@code AsyncFunction} to the result of the original {@code Future}.
    * Example usage:
    *
-   * <pre>{@code
+   * {@snippet :
    * FluentFuture<RowKey> rowKeyFuture = FluentFuture.from(indexService.lookUp(query));
    * ListenableFuture<QueryResult> queryFuture =
    *     rowKeyFuture.transformAsync(dataService::readFuture, executor);
-   * }</pre>
+   * }
    *
    * <p>When selecting an executor, note that {@code directExecutor} is dangerous in some cases. See
    * the discussion in the {@link #addListener} documentation. All its warnings about heavyweight
@@ -338,12 +349,12 @@ public abstract class FluentFuture<V extends @Nullable Object>
   /**
    * Returns a new {@code Future} whose result is derived from the result of this {@code Future}. If
    * this input {@code Future} fails, the returned {@code Future} fails with the same exception (and
-   * the function is not invoked). Example usage:
+   * the function is not invoked). If the function throws an exception, the returned {@code Future}
+   * fails with that exception. Example usage:
    *
-   * <pre>{@code
-   * ListenableFuture<List<Row>> rowsFuture =
-   *     queryFuture.transform(QueryResult::getRows, executor);
-   * }</pre>
+   * {@snippet :
+   * ListenableFuture<List<Row>> rowsFuture = queryFuture.transform(QueryResult::getRows, executor);
+   * }
    *
    * <p>When selecting an executor, note that {@code directExecutor} is dangerous in some cases. See
    * the discussion in the {@link #addListener} documentation. All its warnings about heavyweight
@@ -383,7 +394,7 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *
    * <p>Example:
    *
-   * <pre>{@code
+   * {@snippet :
    * future.addCallback(
    *     new FutureCallback<QueryResult>() {
    *       public void onSuccess(QueryResult result) {
@@ -393,7 +404,7 @@ public abstract class FluentFuture<V extends @Nullable Object>
    *         reportError(t);
    *       }
    *     }, executor);
-   * }</pre>
+   * }
    *
    * <p>When selecting an executor, note that {@code directExecutor} is dangerous in some cases. See
    * the discussion in the {@link #addListener} documentation. All its warnings about heavyweight

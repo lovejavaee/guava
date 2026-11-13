@@ -16,7 +16,6 @@ package com.google.common.base;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import java.io.Serializable;
@@ -26,7 +25,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Utility methods for working with {@link Enum} instances.
@@ -34,9 +33,8 @@ import javax.annotation.CheckForNull;
  * @author Steve McKay
  * @since 9.0
  */
-@GwtCompatible(emulated = true)
+@GwtIncompatible
 @J2ktIncompatible
-@ElementTypesAreNonnullByDefault
 public final class Enums {
 
   private Enums() {}
@@ -48,10 +46,8 @@ public final class Enums {
    *
    * @since 12.0
    */
-  @GwtIncompatible // reflection
   public static Field getField(Enum<?> enumValue) {
-    Class<?>
-        clazz = enumValue.getDeclaringClass();
+    Class<?> clazz = enumValue.getDeclaringClass();
     try {
       return clazz.getDeclaredField(enumValue.name());
     } catch (NoSuchFieldException impossible) {
@@ -73,11 +69,9 @@ public final class Enums {
     return Platform.getEnumIfPresent(enumClass, value);
   }
 
-  @GwtIncompatible // java.lang.ref.WeakReference
   private static final Map<Class<? extends Enum<?>>, Map<String, WeakReference<? extends Enum<?>>>>
       enumConstantCache = new WeakHashMap<>();
 
-  @GwtIncompatible // java.lang.ref.WeakReference
   private static <T extends Enum<T>> Map<String, WeakReference<? extends Enum<?>>> populateCache(
       Class<T> enumClass) {
     Map<String, WeakReference<? extends Enum<?>>> result = new HashMap<>();
@@ -88,7 +82,6 @@ public final class Enums {
     return result;
   }
 
-  @GwtIncompatible // java.lang.ref.WeakReference
   static <T extends Enum<T>> Map<String, WeakReference<? extends Enum<?>>> getEnumConstants(
       Class<T> enumClass) {
     synchronized (enumConstantCache) {
@@ -132,9 +125,9 @@ public final class Enums {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
-      if (object instanceof StringConverter) {
-        StringConverter<?> that = (StringConverter<?>) object;
+    public boolean equals(@Nullable Object obj) {
+      if (obj instanceof StringConverter) {
+        StringConverter<?> that = (StringConverter<?>) obj;
         return this.enumClass.equals(that.enumClass);
       }
       return false;

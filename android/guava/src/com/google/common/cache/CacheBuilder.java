@@ -17,9 +17,11 @@ package com.google.common.cache;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Ascii;
 import com.google.common.base.Equivalence;
 import com.google.common.base.MoreObjects;
@@ -30,15 +32,17 @@ import com.google.common.cache.AbstractCache.SimpleStatsCounter;
 import com.google.common.cache.AbstractCache.StatsCounter;
 import com.google.common.cache.LocalCache.Strength;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.j2objc.annotations.J2ObjCIncompatible;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
+import java.time.Duration;
 import java.util.ConcurrentModificationException;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A builder of {@link LoadingCache} and {@link Cache} instances.
@@ -48,10 +52,10 @@ import javax.annotation.CheckForNull;
  *
  * <p>The successor to Guava's caching API is <a
  * href="https://github.com/ben-manes/caffeine/wiki">Caffeine</a>. Its API is designed to make it a
- * nearly drop-in replacement -- though it requires Java 8 APIs, is not available for Android or
- * GWT/j2cl, and may have <a href="https://github.com/ben-manes/caffeine/wiki/Guava">different
- * (usually better) behavior</a> when multiple threads attempt concurrent mutations. Its equivalent
- * to {@code CacheBuilder} is its <a
+ * nearly drop-in replacement. Note that it is not available for Android or GWT/J2CL and that it may
+ * have <a href="https://github.com/ben-manes/caffeine/wiki/Guava">different (usually better)
+ * behavior</a> when multiple threads attempt concurrent mutations. Its equivalent to {@code
+ * CacheBuilder} is its <a
  * href="https://www.javadoc.io/doc/com.github.ben-manes.caffeine/caffeine/latest/com.github.benmanes.caffeine/com/github/benmanes/caffeine/cache/Caffeine.html">{@code
  * Caffeine}</a> class. Caffeine offers better performance, more features (including asynchronous
  * loading), and fewer <a
@@ -90,8 +94,9 @@ import javax.annotation.CheckForNull;
  *   <li>least-recently-used eviction when a maximum size is exceeded (note that the cache is
  *       divided into segments, each of which does LRU internally)
  *   <li>time-based expiration of entries, measured since last access or last write
- *   <li>keys automatically wrapped in {@code WeakReference}
- *   <li>values automatically wrapped in {@code WeakReference} or {@code SoftReference}
+ *   <li>keys automatically wrapped in {@linkplain WeakReference weak} references
+ *   <li>values automatically wrapped in {@linkplain WeakReference weak} or {@linkplain
+ *       SoftReference soft} references
  *   <li>notification of evicted (or otherwise removed) entries
  *   <li>accumulation of cache access statistics
  * </ul>
@@ -101,10 +106,10 @@ import javax.annotation.CheckForNull;
  *
  * <p>Usage example:
  *
- * <pre>{@code
+ * {@snippet :
  * LoadingCache<Key, Graph> graphs = CacheBuilder.newBuilder()
  *     .maximumSize(10000)
- *     .expireAfterWrite(10, TimeUnit.MINUTES)
+ *     .expireAfterWrite(Duration.ofMinutes(10))
  *     .removalListener(MY_LISTENER)
  *     .build(
  *         new CacheLoader<Key, Graph>() {
@@ -112,11 +117,11 @@ import javax.annotation.CheckForNull;
  *             return createExpensiveGraph(key);
  *           }
  *         });
- * }</pre>
+ * }
  *
  * <p>Or equivalently,
  *
- * <pre>{@code
+ * {@snippet :
  * // In real life this would come from a command-line flag or config file
  * String spec = "maximumSize=10000,expireAfterWrite=10m";
  *
@@ -128,7 +133,7 @@ import javax.annotation.CheckForNull;
  *             return createExpensiveGraph(key);
  *           }
  *         });
- * }</pre>
+ * }
  *
  * <p>The returned cache implements all optional operations of the {@link LoadingCache} and {@link
  * Cache} interfaces. The {@code asMap} view (and its collection views) have <i>weakly consistent
@@ -179,25 +184,24 @@ import javax.annotation.CheckForNull;
  * explanation.
  *
  * @param <K> the most general key type this builder will be able to create caches for. This is
- *     normally {@code Object} unless it is constrained by using a method like {@code
+ *     normally {@code Object} unless it is constrained by using a method like {@link
  *     #removalListener}. Cache keys may not be null.
  * @param <V> the most general value type this builder will be able to create caches for. This is
- *     normally {@code Object} unless it is constrained by using a method like {@code
+ *     normally {@code Object} unless it is constrained by using a method like {@link
  *     #removalListener}. Cache values may not be null.
  * @author Charles Fry
  * @author Kevin Bourrillion
  * @since 10.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class CacheBuilder<K, V> {
   private static final int DEFAULT_INITIAL_CAPACITY = 16;
   private static final int DEFAULT_CONCURRENCY_LEVEL = 4;
 
-  @SuppressWarnings("GoodTime") // should be a java.time.Duration
+  @SuppressWarnings("GoodTime") // should be a Duration
   private static final int DEFAULT_EXPIRATION_NANOS = 0;
 
-  @SuppressWarnings("GoodTime") // should be a java.time.Duration
+  @SuppressWarnings("GoodTime") // should be a Duration
   private static final int DEFAULT_REFRESH_NANOS = 0;
 
   static final Supplier<? extends StatsCounter> NULL_STATS_COUNTER =
@@ -228,15 +232,24 @@ public final class CacheBuilder<K, V> {
   static final CacheStats EMPTY_STATS = new CacheStats(0, 0, 0, 0, 0, 0);
 
   /*
-   * We avoid using a method reference here for now: Inside Google, CacheBuilder is used from the
-   * implementation of a custom ClassLoader that is sometimes used as a system classloader. That's a
-   * problem because method-reference linking tries to look up the system classloader, and it fails
-   * because there isn't one yet.
+   * We avoid using a method reference or lambda here for now:
    *
-   * I would have guessed that a lambda would produce the same problem, but maybe it's safe because
-   * the lambda implementation is generated as a method in the _same class_ as the usage?
+   * - method reference: Inside Google, CacheBuilder is used from the implementation of a custom
+   *   ClassLoader that is sometimes used as a system classloader. That's a problem because
+   *   method-reference linking tries to look up the system classloader, and it fails because there
+   *   isn't one yet.
+   *
+   * - lambda: Outside Google, we got a report of a similar problem in
+   *   https://github.com/google/guava/issues/6565
    */
-  static final Supplier<StatsCounter> CACHE_STATS_COUNTER = () -> new SimpleStatsCounter();
+  @SuppressWarnings("AnonymousToLambda")
+  static final Supplier<StatsCounter> CACHE_STATS_COUNTER =
+      new Supplier<StatsCounter>() {
+        @Override
+        public StatsCounter get() {
+          return new SimpleStatsCounter();
+        }
+      };
 
   enum NullListener implements RemovalListener<Object, Object> {
     INSTANCE;
@@ -262,7 +275,10 @@ public final class CacheBuilder<K, V> {
         }
       };
 
-  private static final Logger logger = Logger.getLogger(CacheBuilder.class.getName());
+  // We use a holder class to delay initialization: https://github.com/google/guava/issues/6566
+  private static final class LoggerHolder {
+    static final Logger logger = Logger.getLogger(CacheBuilder.class.getName());
+  }
 
   static final int UNSET_INT = -1;
 
@@ -272,25 +288,25 @@ public final class CacheBuilder<K, V> {
   int concurrencyLevel = UNSET_INT;
   long maximumSize = UNSET_INT;
   long maximumWeight = UNSET_INT;
-  @CheckForNull Weigher<? super K, ? super V> weigher;
+  @Nullable Weigher<? super K, ? super V> weigher;
 
-  @CheckForNull Strength keyStrength;
-  @CheckForNull Strength valueStrength;
+  @Nullable Strength keyStrength;
+  @Nullable Strength valueStrength;
 
-  @SuppressWarnings("GoodTime") // should be a java.time.Duration
+  @SuppressWarnings("GoodTime") // should be a Duration
   long expireAfterWriteNanos = UNSET_INT;
 
-  @SuppressWarnings("GoodTime") // should be a java.time.Duration
+  @SuppressWarnings("GoodTime") // should be a Duration
   long expireAfterAccessNanos = UNSET_INT;
 
-  @SuppressWarnings("GoodTime") // should be a java.time.Duration
+  @SuppressWarnings("GoodTime") // should be a Duration
   long refreshNanos = UNSET_INT;
 
-  @CheckForNull Equivalence<Object> keyEquivalence;
-  @CheckForNull Equivalence<Object> valueEquivalence;
+  @Nullable Equivalence<Object> keyEquivalence;
+  @Nullable Equivalence<Object> valueEquivalence;
 
-  @CheckForNull RemovalListener<? super K, ? super V> removalListener;
-  @CheckForNull Ticker ticker;
+  @Nullable RemovalListener<? super K, ? super V> removalListener;
+  @Nullable Ticker ticker;
 
   Supplier<? extends StatsCounter> statsCounterSupplier = NULL_STATS_COUNTER;
 
@@ -312,7 +328,8 @@ public final class CacheBuilder<K, V> {
    *
    * @since 12.0
    */
-  @GwtIncompatible // To be supported
+  @GwtIncompatible
+  @J2ktIncompatible
   public static CacheBuilder<Object, Object> from(CacheBuilderSpec spec) {
     return spec.toCacheBuilder().lenientParsing();
   }
@@ -324,7 +341,8 @@ public final class CacheBuilder<K, V> {
    * @param spec a String in the format specified by {@link CacheBuilderSpec}
    * @since 12.0
    */
-  @GwtIncompatible // To be supported
+  @GwtIncompatible
+  @J2ktIncompatible
   public static CacheBuilder<Object, Object> from(String spec) {
     return from(CacheBuilderSpec.parse(spec));
   }
@@ -334,7 +352,8 @@ public final class CacheBuilder<K, V> {
    *
    * @return this {@code CacheBuilder} instance (for chaining)
    */
-  @GwtIncompatible // To be supported
+  @GwtIncompatible
+  @J2ktIncompatible
   @CanIgnoreReturnValue
   CacheBuilder<K, V> lenientParsing() {
     strictParsing = false;
@@ -349,7 +368,7 @@ public final class CacheBuilder<K, V> {
    *
    * @return this {@code CacheBuilder} instance (for chaining)
    */
-  @GwtIncompatible // To be supported
+  @GwtIncompatible
   @CanIgnoreReturnValue
   CacheBuilder<K, V> keyEquivalence(Equivalence<Object> equivalence) {
     checkState(keyEquivalence == null, "key equivalence was already set to %s", keyEquivalence);
@@ -370,7 +389,7 @@ public final class CacheBuilder<K, V> {
    *
    * @return this {@code CacheBuilder} instance (for chaining)
    */
-  @GwtIncompatible // To be supported
+  @GwtIncompatible
   @CanIgnoreReturnValue
   CacheBuilder<K, V> valueEquivalence(Equivalence<Object> equivalence) {
     checkState(
@@ -517,7 +536,8 @@ public final class CacheBuilder<K, V> {
    * @throws IllegalStateException if a maximum weight or size was already set
    * @since 11.0
    */
-  @GwtIncompatible // To be supported
+  @J2ktIncompatible
+  @GwtIncompatible
   @CanIgnoreReturnValue
   public CacheBuilder<K, V> maximumWeight(long maximumWeight) {
     checkState(
@@ -556,11 +576,12 @@ public final class CacheBuilder<K, V> {
    *
    * @param weigher the weigher to use in calculating the weight of cache entries
    * @return this {@code CacheBuilder} instance (for chaining)
-   * @throws IllegalArgumentException if {@code size} is negative
-   * @throws IllegalStateException if a maximum size was already set
+   * @throws IllegalStateException if a weigher was already set or {@link #maximumSize(long)} was
+   *     previously called
    * @since 11.0
    */
-  @GwtIncompatible // To be supported
+  @J2ktIncompatible
+  @GwtIncompatible
   @CanIgnoreReturnValue // TODO(b/27479612): consider removing this
   public <K1 extends K, V1 extends V> CacheBuilder<K1, V1> weigher(
       Weigher<? super K1, ? super V1> weigher) {
@@ -699,12 +720,47 @@ public final class CacheBuilder<K, V> {
    *
    * @param duration the length of time after an entry is created that it should be automatically
    *     removed
+   * @return this {@code CacheBuilder} instance (for chaining)
+   * @throws IllegalArgumentException if {@code duration} is negative
+   * @throws IllegalStateException if {@link #expireAfterWrite} was already set
+   * @throws ArithmeticException for durations greater than +/- approximately 292 years
+   * @since 33.3.0 (but since 25.0 in the JRE <a
+   *     href="https://github.com/google/guava#guava-google-core-libraries-for-java">flavor</a>)
+   */
+  @J2ObjCIncompatible
+  @GwtIncompatible // Duration
+  @J2ktIncompatible
+  @SuppressWarnings("GoodTime") // Duration decomposition
+  @IgnoreJRERequirement // No more dangerous than wherever the caller got the Duration from
+  @CanIgnoreReturnValue
+  public CacheBuilder<K, V> expireAfterWrite(Duration duration) {
+    return expireAfterWrite(toNanosSaturated(duration), NANOSECONDS);
+  }
+
+  /**
+   * Specifies that each entry should be automatically removed from the cache once a fixed duration
+   * has elapsed after the entry's creation, or the most recent replacement of its value.
+   *
+   * <p>When {@code duration} is zero, this method hands off to {@link #maximumSize(long)
+   * maximumSize}{@code (0)}, ignoring any otherwise-specified maximum size or weight. This can be
+   * useful in testing, or to disable caching temporarily without a code change.
+   *
+   * <p>Expired entries may be counted in {@link Cache#size}, but will never be visible to read or
+   * write operations. Expired entries are cleaned up as part of the routine maintenance described
+   * in the class javadoc.
+   *
+   * <p>If you can represent the duration as a {@link Duration} (which should be preferred when
+   * feasible), use {@link #expireAfterWrite(Duration)} instead.
+   *
+   * @param duration the length of time after an entry is created that it should be automatically
+   *     removed
    * @param unit the unit that {@code duration} is expressed in
    * @return this {@code CacheBuilder} instance (for chaining)
    * @throws IllegalArgumentException if {@code duration} is negative
    * @throws IllegalStateException if {@link #expireAfterWrite} was already set
+   * @deprecated Use {@link #expireAfterWrite(Duration)} instead.
    */
-  @SuppressWarnings("GoodTime") // should accept a java.time.Duration
+  @Deprecated // GoodTime
   @CanIgnoreReturnValue
   public CacheBuilder<K, V> expireAfterWrite(long duration, TimeUnit unit) {
     checkState(
@@ -726,6 +782,42 @@ public final class CacheBuilder<K, V> {
    * has elapsed after the entry's creation, the most recent replacement of its value, or its last
    * access. Access time is reset by all cache read and write operations (including {@code
    * Cache.asMap().get(Object)} and {@code Cache.asMap().put(K, V)}), but not by {@code
+   * containsKey(Object)}, nor by operations on the collection-views of {@link Cache#asMap}}. So,
+   * for example, iterating through {@code Cache.asMap().entrySet()} does not reset access time for
+   * the entries you retrieve.
+   *
+   * <p>When {@code duration} is zero, this method hands off to {@link #maximumSize(long)
+   * maximumSize}{@code (0)}, ignoring any otherwise-specified maximum size or weight. This can be
+   * useful in testing, or to disable caching temporarily without a code change.
+   *
+   * <p>Expired entries may be counted in {@link Cache#size}, but will never be visible to read or
+   * write operations. Expired entries are cleaned up as part of the routine maintenance described
+   * in the class javadoc.
+   *
+   * @param duration the length of time after an entry is last accessed that it should be
+   *     automatically removed
+   * @return this {@code CacheBuilder} instance (for chaining)
+   * @throws IllegalArgumentException if {@code duration} is negative
+   * @throws IllegalStateException if {@link #expireAfterAccess} was already set
+   * @throws ArithmeticException for durations greater than +/- approximately 292 years
+   * @since 33.3.0 (but since 25.0 in the JRE <a
+   *     href="https://github.com/google/guava#guava-google-core-libraries-for-java">flavor</a>)
+   */
+  @J2ObjCIncompatible
+  @J2ktIncompatible
+  @GwtIncompatible // Duration
+  @SuppressWarnings("GoodTime") // Duration decomposition
+  @IgnoreJRERequirement // No more dangerous than wherever the caller got the Duration from
+  @CanIgnoreReturnValue
+  public CacheBuilder<K, V> expireAfterAccess(Duration duration) {
+    return expireAfterAccess(toNanosSaturated(duration), NANOSECONDS);
+  }
+
+  /**
+   * Specifies that each entry should be automatically removed from the cache once a fixed duration
+   * has elapsed after the entry's creation, the most recent replacement of its value, or its last
+   * access. Access time is reset by all cache read and write operations (including {@code
+   * Cache.asMap().get(Object)} and {@code Cache.asMap().put(K, V)}), but not by {@code
    * containsKey(Object)}, nor by operations on the collection-views of {@link Cache#asMap}. So, for
    * example, iterating through {@code Cache.asMap().entrySet()} does not reset access time for the
    * entries you retrieve.
@@ -738,14 +830,18 @@ public final class CacheBuilder<K, V> {
    * write operations. Expired entries are cleaned up as part of the routine maintenance described
    * in the class javadoc.
    *
+   * <p>If you can represent the duration as a {@link Duration} (which should be preferred when
+   * feasible), use {@link #expireAfterAccess(Duration)} instead.
+   *
    * @param duration the length of time after an entry is last accessed that it should be
    *     automatically removed
    * @param unit the unit that {@code duration} is expressed in
    * @return this {@code CacheBuilder} instance (for chaining)
    * @throws IllegalArgumentException if {@code duration} is negative
    * @throws IllegalStateException if {@link #expireAfterAccess} was already set
+   * @deprecated Use {@link #expireAfterAccess(Duration)} instead.
    */
-  @SuppressWarnings("GoodTime") // should accept a java.time.Duration
+  @Deprecated // GoodTime
   @CanIgnoreReturnValue
   public CacheBuilder<K, V> expireAfterAccess(long duration, TimeUnit unit) {
     checkState(
@@ -778,10 +874,51 @@ public final class CacheBuilder<K, V> {
    * <p>Currently automatic refreshes are performed when the first stale request for an entry
    * occurs. The request triggering refresh will make a synchronous call to {@link
    * CacheLoader#reload}
+   * to obtain a future of the new value. If the returned future is already complete, it is returned
+   * immediately. Otherwise, the old value is returned.
+   *
+   * <p><b>Note:</b> <i>all exceptions thrown during refresh will be logged and then swallowed</i>.
+   *
+   * @param duration the length of time after an entry is created that it should be considered
+   *     stale, and thus eligible for refresh
+   * @return this {@code CacheBuilder} instance (for chaining)
+   * @throws IllegalArgumentException if {@code duration} is negative
+   * @throws IllegalStateException if {@link #refreshAfterWrite} was already set
+   * @throws ArithmeticException for durations greater than +/- approximately 292 years
+   * @since 33.3.0 (but since 25.0 in the JRE <a
+   *     href="https://github.com/google/guava#guava-google-core-libraries-for-java">flavor</a>)
+   */
+  @J2ObjCIncompatible
+  @J2ktIncompatible
+  @GwtIncompatible // Duration
+  @SuppressWarnings("GoodTime") // Duration decomposition
+  @IgnoreJRERequirement // No more dangerous than wherever the caller got the Duration from
+  @CanIgnoreReturnValue
+  public CacheBuilder<K, V> refreshAfterWrite(Duration duration) {
+    return refreshAfterWrite(toNanosSaturated(duration), NANOSECONDS);
+  }
+
+  /**
+   * Specifies that active entries are eligible for automatic refresh once a fixed duration has
+   * elapsed after the entry's creation, or the most recent replacement of its value. The semantics
+   * of refreshes are specified in {@link LoadingCache#refresh}, and are performed by calling {@link
+   * CacheLoader#reload}.
+   *
+   * <p>As the default implementation of {@link CacheLoader#reload} is synchronous, it is
+   * recommended that users of this method override {@link CacheLoader#reload} with an asynchronous
+   * implementation; otherwise refreshes will be performed during unrelated cache read and write
+   * operations.
+   *
+   * <p>Currently automatic refreshes are performed when the first stale request for an entry
+   * occurs. The request triggering refresh will make a synchronous call to {@link
+   * CacheLoader#reload}
    * and immediately return the new value if the returned future is complete, and the old value
    * otherwise.
    *
    * <p><b>Note:</b> <i>all exceptions thrown during refresh will be logged and then swallowed</i>.
+   *
+   * <p>If you can represent the duration as a {@link Duration} (which should be preferred when
+   * feasible), use {@link #refreshAfterWrite(Duration)} instead.
    *
    * @param duration the length of time after an entry is created that it should be considered
    *     stale, and thus eligible for refresh
@@ -790,9 +927,10 @@ public final class CacheBuilder<K, V> {
    * @throws IllegalArgumentException if {@code duration} is negative
    * @throws IllegalStateException if {@link #refreshAfterWrite} was already set
    * @since 11.0
+   * @deprecated Use {@link #refreshAfterWrite(Duration)} instead.
    */
-  @GwtIncompatible // To be supported (synchronously).
-  @SuppressWarnings("GoodTime") // should accept a java.time.Duration
+  @GwtIncompatible
+  @Deprecated // GoodTime
   @CanIgnoreReturnValue
   public CacheBuilder<K, V> refreshAfterWrite(long duration, TimeUnit unit) {
     checkNotNull(unit);
@@ -849,7 +987,6 @@ public final class CacheBuilder<K, V> {
    *
    * @return the cache builder reference that should be used instead of {@code this} for any
    *     remaining configuration and cache building
-   * @return this {@code CacheBuilder} instance (for chaining)
    * @throws IllegalStateException if a removal listener was already set
    */
   public <K1 extends K, V1 extends V> CacheBuilder<K1, V1> removalListener(
@@ -941,7 +1078,8 @@ public final class CacheBuilder<K, V> {
         checkState(maximumWeight != UNSET_INT, "weigher requires maximumWeight");
       } else {
         if (maximumWeight == UNSET_INT) {
-          logger.log(Level.WARNING, "ignoring weigher specified without maximumWeight");
+          LoggerHolder.logger.log(
+              Level.WARNING, "ignoring weigher specified without maximumWeight");
         }
       }
     }
@@ -988,5 +1126,26 @@ public final class CacheBuilder<K, V> {
       s.addValue("removalListener");
     }
     return s.toString();
+  }
+
+  /**
+   * Returns the number of nanoseconds of the given duration without throwing or overflowing.
+   *
+   * <p>Instead of throwing {@link ArithmeticException}, this method silently saturates to either
+   * {@link Long#MAX_VALUE} or {@link Long#MIN_VALUE}. This behavior can be useful when decomposing
+   * a duration in order to call a legacy API which requires a {@code long, TimeUnit} pair.
+   */
+  @J2ktIncompatible
+  @GwtIncompatible // Duration
+  @SuppressWarnings("GoodTime") // Duration decomposition
+  @IgnoreJRERequirement // No more dangerous than wherever the caller got the Duration from
+  private static long toNanosSaturated(Duration duration) {
+    // Using a try/catch seems lazy, but the catch block will rarely get invoked (except for
+    // durations longer than approximately +/- 292 years).
+    try {
+      return duration.toNanos();
+    } catch (ArithmeticException tooBig) {
+      return duration.isNegative() ? Long.MIN_VALUE : Long.MAX_VALUE;
+    }
   }
 }

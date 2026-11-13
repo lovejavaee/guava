@@ -16,10 +16,12 @@
 
 package com.google.common.collect;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Iterator;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An iterator which forwards all its method calls to another iterator. Subclasses should override
@@ -37,7 +39,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ForwardingIterator<T extends @Nullable Object> extends ForwardingObject
     implements Iterator<T> {
 
@@ -62,5 +63,27 @@ public abstract class ForwardingIterator<T extends @Nullable Object> extends For
   @Override
   public void remove() {
     delegate().remove();
+  }
+
+  /**
+   * A simplified version of {@link ForwardingIterator} where subclasses can pass in an already
+   * constructed {@link Iterator} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingIterator<T extends @Nullable Object>
+      extends ForwardingIterator<T> {
+    private final Iterator<T> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingIterator(Iterator<T> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final Iterator<T> delegate() {
+      return delegate;
+    }
   }
 }

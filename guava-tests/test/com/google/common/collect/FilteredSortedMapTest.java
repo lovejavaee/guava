@@ -16,16 +16,20 @@
 
 package com.google.common.collect;
 
-import static com.google.common.collect.MapsTest.CORRECT_LENGTH;
+import static com.google.common.collect.Maps.filterEntries;
+import static com.google.common.collect.Maps.newTreeMap;
+import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.annotations.GwtCompatible;
 import java.util.SortedMap;
+import org.jspecify.annotations.NullMarked;
 
 @GwtCompatible
-public class FilteredSortedMapTest extends FilteredMapTest {
+@NullMarked
+public class FilteredSortedMapTest extends AbstractFilteredMapTest {
   @Override
   SortedMap<String, Integer> createUnfiltered() {
-    return Maps.newTreeMap();
+    return newTreeMap();
   }
 
   public void testFirstAndLastKeyFilteredMap() {
@@ -35,18 +39,18 @@ public class FilteredSortedMapTest extends FilteredMapTest {
     unfiltered.put("cat", 3);
     unfiltered.put("dog", 5);
 
-    SortedMap<String, Integer> filtered = Maps.filterEntries(unfiltered, CORRECT_LENGTH);
-    assertEquals("banana", filtered.firstKey());
-    assertEquals("cat", filtered.lastKey());
+    SortedMap<String, Integer> filtered = filterEntries(unfiltered, CORRECT_LENGTH);
+    assertThat(filtered.firstKey()).isEqualTo("banana");
+    assertThat(filtered.lastKey()).isEqualTo("cat");
   }
 
-  public void testHeadSubTailMap_FilteredMap() {
+  public void testHeadSubTailMap_filteredMap() {
     SortedMap<String, Integer> unfiltered = createUnfiltered();
     unfiltered.put("apple", 2);
     unfiltered.put("banana", 6);
     unfiltered.put("cat", 4);
     unfiltered.put("dog", 3);
-    SortedMap<String, Integer> filtered = Maps.filterEntries(unfiltered, CORRECT_LENGTH);
+    SortedMap<String, Integer> filtered = filterEntries(unfiltered, CORRECT_LENGTH);
 
     assertEquals(ImmutableMap.of("banana", 6), filtered.headMap("dog"));
     assertEquals(ImmutableMap.of(), filtered.headMap("banana"));

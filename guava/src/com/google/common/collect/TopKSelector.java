@@ -19,27 +19,29 @@ package com.google.common.collect;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.NullnessCasts.uncheckedCastNullableTToT;
+import static java.lang.Math.max;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.sort;
+import static java.util.Collections.unmodifiableList;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.math.IntMath;
 import java.math.RoundingMode;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An accumulator that selects the "top" {@code k} elements added to it, relative to a provided
  * comparator. "Top" can mean the greatest or the lowest elements, specified in the factory used to
  * create the {@code TopKSelector} instance.
  *
- * <p>If your input data is available as a {@link Stream}, prefer passing {@link
- * Comparators#least(int)} to {@link Stream#collect(java.util.stream.Collector)}. If it is available
- * as an {@link Iterable} or {@link Iterator}, prefer {@link Ordering#leastOf(Iterable, int)}.
+ * <p>If your input data is available as a {@link Stream}, prefer passing {@link Comparators#least}
+ * to {@link Stream#collect(java.util.stream.Collector)}. If it is available as an {@link Iterable}
+ * or {@link Iterator}, prefer {@link Ordering#leastOf(Iterable, int)}.
  *
  * <p>This uses the same efficient implementation as {@link Ordering#leastOf(Iterable, int)},
  * offering expected O(n + k log k) performance (worst case O(n log k)) for n calls to {@link
@@ -54,7 +56,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Louis Wasserman
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 final class TopKSelector<
     T extends @Nullable Object> {
 
@@ -77,7 +78,7 @@ final class TopKSelector<
    */
   public static <T extends @Nullable Object> TopKSelector<T> least(
       int k, Comparator<? super T> comparator) {
-    return new TopKSelector<T>(comparator, k);
+    return new TopKSelector<>(comparator, k);
   }
 
   /**
@@ -99,7 +100,7 @@ final class TopKSelector<
    */
   public static <T extends @Nullable Object> TopKSelector<T> greatest(
       int k, Comparator<? super T> comparator) {
-    return new TopKSelector<T>(Ordering.from(comparator).reverse(), k);
+    return new TopKSelector<>(Ordering.from(comparator).reverse(), k);
   }
 
   private final int k;
@@ -117,14 +118,15 @@ final class TopKSelector<
    * The largest of the lowest k elements we've seen so far relative to this comparator. If
    * bufferSize ≥ k, then we can ignore any elements greater than this value.
    */
-  @CheckForNull private T threshold;
+  private @Nullable T threshold;
 
+  @SuppressWarnings("unchecked") // TODO(cpovirk): Consider storing Object[] instead of T[].
   private TopKSelector(Comparator<? super T> comparator, int k) {
     this.comparator = checkNotNull(comparator, "comparator");
     this.k = k;
     checkArgument(k >= 0, "k (%s) must be >= 0", k);
     checkArgument(k <= Integer.MAX_VALUE / 2, "k (%s) must be <= Integer.MAX_VALUE / 2", k);
-    this.buffer = (T[]) new Object[IntMath.checkedMultiply(k, 2)];
+    this.buffer = (T[]) new Object[Math.multiplyExact(k, 2)];
     this.bufferSize = 0;
     this.threshold = null;
   }
@@ -178,7 +180,7 @@ final class TopKSelector<
       if (pivotNewIndex > k) {
         right = pivotNewIndex - 1;
       } else if (pivotNewIndex < k) {
-        left = Math.max(pivotNewIndex, left + 1);
+        left = max(pivotNewIndex, left + 1);
         minThresholdPosition = pivotNewIndex;
       } else {
         break;
@@ -186,9 +188,9 @@ final class TopKSelector<
       iterations++;
       if (iterations >= maxIterations) {
         @SuppressWarnings("nullness") // safe because we pass sort() a range that contains real Ts
-        T[] castBuffer = (T[]) buffer;
+        T[] castBuffer = buffer;
         // We've already taken O(k log k), let's make sure we don't take longer than O(k log k).
-        Arrays.sort(castBuffer, left, right + 1, comparator);
+        sort(castBuffer, left, right + 1, comparator);
         break;
       }
     }
@@ -232,6 +234,12 @@ final class TopKSelector<
     buffer[j] = tmp;
   }
 
+  /*
+   * While the current implementation returns `this`, that's not something we mean to guarantee.
+   * Anyway, the purpose of this method is to implement a BinaryOperator combiner for a Collector,
+   * so its return value will get used naturally.
+   */
+  @SuppressWarnings("CanIgnoreReturnValueSuggester")
   TopKSelector<T> combine(TopKSelector<T> other) {
     for (int i = 0; i < other.bufferSize; i++) {
       this.offer(uncheckedCastNullableTToT(other.buffer[i]));
@@ -274,8 +282,8 @@ final class TopKSelector<
    */
   public List<T> topK() {
     @SuppressWarnings("nullness") // safe because we pass sort() a range that contains real Ts
-    T[] castBuffer = (T[]) buffer;
-    Arrays.sort(castBuffer, 0, bufferSize, comparator);
+    T[] castBuffer = buffer;
+    sort(castBuffer, 0, bufferSize, comparator);
     if (bufferSize > k) {
       Arrays.fill(buffer, k, buffer.length, null);
       bufferSize = k;
@@ -284,6 +292,6 @@ final class TopKSelector<
     // Up to bufferSize, all elements of buffer are real Ts (not null unless T includes null)
     T[] topK = Arrays.copyOf(castBuffer, bufferSize);
     // we have to support null elements, so no ImmutableList for us
-    return Collections.unmodifiableList(Arrays.asList(topK));
+    return unmodifiableList(asList(topK));
   }
 }

@@ -19,19 +19,20 @@ package com.google.common.graph;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Iterators.concat;
+import static com.google.common.collect.Iterators.transform;
 import static com.google.common.graph.GraphConstants.INNER_CAPACITY;
 import static com.google.common.graph.GraphConstants.INNER_LOAD_FACTOR;
 import static com.google.common.graph.Graphs.checkNonNegative;
 import static com.google.common.graph.Graphs.checkPositive;
+import static java.util.Collections.unmodifiableSet;
 
 import com.google.common.base.Function;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterators;
 import com.google.common.collect.UnmodifiableIterator;
 import java.util.AbstractSet;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -40,7 +41,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An implementation of {@link GraphConnections} for directed graphs.
@@ -50,7 +51,6 @@ import javax.annotation.CheckForNull;
  * @param <N> Node parameter type
  * @param <V> Value parameter type
  */
-@ElementTypesAreNonnullByDefault
 final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
   /**
    * A wrapper class to indicate a node is both a predecessor and successor while still providing
@@ -83,7 +83,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
       }
 
       @Override
-      public boolean equals(@CheckForNull Object that) {
+      public boolean equals(@Nullable Object that) {
         if (that instanceof Pred) {
           return this.node.equals(((Pred<?>) that).node);
         } else {
@@ -104,7 +104,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
       }
 
       @Override
-      public boolean equals(@CheckForNull Object that) {
+      public boolean equals(@Nullable Object that) {
         if (that instanceof Succ) {
           return this.node.equals(((Succ<?>) that).node);
         } else {
@@ -134,14 +134,14 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
    * LinkedHashMap combines two such edges into a single node-value pair, even though the edges may
    * not have been inserted consecutively.
    */
-  @CheckForNull private final List<NodeConnection<N>> orderedNodeConnections;
+  private final @Nullable List<NodeConnection<N>> orderedNodeConnections;
 
   private int predecessorCount;
   private int successorCount;
 
   private DirectedGraphConnections(
       Map<N, Object> adjacentNodeValues,
-      @CheckForNull List<NodeConnection<N>> orderedNodeConnections,
+      @Nullable List<NodeConnection<N>> orderedNodeConnections,
       int predecessorCount,
       int successorCount) {
     this.adjacentNodeValues = checkNotNull(adjacentNodeValues);
@@ -170,10 +170,10 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
     }
 
     return new DirectedGraphConnections<>(
-        /* adjacentNodeValues = */ new HashMap<N, Object>(initialCapacity, INNER_LOAD_FACTOR),
+        /* adjacentNodeValues= */ new HashMap<N, Object>(initialCapacity, INNER_LOAD_FACTOR),
         orderedNodeConnections,
-        /* predecessorCount = */ 0,
-        /* successorCount = */ 0);
+        /* predecessorCount= */ 0,
+        /* successorCount= */ 0);
   }
 
   static <N, V> DirectedGraphConnections<N, V> ofImmutable(
@@ -234,7 +234,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
   @Override
   public Set<N> adjacentNodes() {
     if (orderedNodeConnections == null) {
-      return Collections.unmodifiableSet(adjacentNodeValues.keySet());
+      return unmodifiableSet(adjacentNodeValues.keySet());
     } else {
       return new AbstractSet<N>() {
         @Override
@@ -243,8 +243,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
           Set<N> seenNodes = new HashSet<>();
           return new AbstractIterator<N>() {
             @Override
-            @CheckForNull
-            protected N computeNext() {
+            protected @Nullable N computeNext() {
               while (nodeConnections.hasNext()) {
                 NodeConnection<N> nodeConnection = nodeConnections.next();
                 boolean added = seenNodes.add(nodeConnection.node);
@@ -263,7 +262,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
         }
 
         @Override
-        public boolean contains(@CheckForNull Object obj) {
+        public boolean contains(@Nullable Object obj) {
           return adjacentNodeValues.containsKey(obj);
         }
       };
@@ -279,8 +278,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
           Iterator<Entry<N, Object>> entries = adjacentNodeValues.entrySet().iterator();
           return new AbstractIterator<N>() {
             @Override
-            @CheckForNull
-            protected N computeNext() {
+            protected @Nullable N computeNext() {
               while (entries.hasNext()) {
                 Entry<N, Object> entry = entries.next();
                 if (isPredecessor(entry.getValue())) {
@@ -294,8 +292,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
           Iterator<NodeConnection<N>> nodeConnections = orderedNodeConnections.iterator();
           return new AbstractIterator<N>() {
             @Override
-            @CheckForNull
-            protected N computeNext() {
+            protected @Nullable N computeNext() {
               while (nodeConnections.hasNext()) {
                 NodeConnection<N> nodeConnection = nodeConnections.next();
                 if (nodeConnection instanceof NodeConnection.Pred) {
@@ -314,7 +311,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
       }
 
       @Override
-      public boolean contains(@CheckForNull Object obj) {
+      public boolean contains(@Nullable Object obj) {
         return isPredecessor(adjacentNodeValues.get(obj));
       }
     };
@@ -329,8 +326,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
           Iterator<Entry<N, Object>> entries = adjacentNodeValues.entrySet().iterator();
           return new AbstractIterator<N>() {
             @Override
-            @CheckForNull
-            protected N computeNext() {
+            protected @Nullable N computeNext() {
               while (entries.hasNext()) {
                 Entry<N, Object> entry = entries.next();
                 if (isSuccessor(entry.getValue())) {
@@ -344,8 +340,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
           Iterator<NodeConnection<N>> nodeConnections = orderedNodeConnections.iterator();
           return new AbstractIterator<N>() {
             @Override
-            @CheckForNull
-            protected N computeNext() {
+            protected @Nullable N computeNext() {
               while (nodeConnections.hasNext()) {
                 NodeConnection<N> nodeConnection = nodeConnections.next();
                 if (nodeConnection instanceof NodeConnection.Succ) {
@@ -364,7 +359,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
       }
 
       @Override
-      public boolean contains(@CheckForNull Object obj) {
+      public boolean contains(@Nullable Object obj) {
         return isSuccessor(adjacentNodeValues.get(obj));
       }
     };
@@ -377,16 +372,16 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
     Iterator<EndpointPair<N>> resultWithDoubleSelfLoop;
     if (orderedNodeConnections == null) {
       resultWithDoubleSelfLoop =
-          Iterators.concat(
-              Iterators.transform(
+          concat(
+              transform(
                   predecessors().iterator(),
                   (N predecessor) -> EndpointPair.ordered(predecessor, thisNode)),
-              Iterators.transform(
+              transform(
                   successors().iterator(),
                   (N successor) -> EndpointPair.ordered(thisNode, successor)));
     } else {
       resultWithDoubleSelfLoop =
-          Iterators.transform(
+          transform(
               orderedNodeConnections.iterator(),
               (NodeConnection<N> connection) -> {
                 if (connection instanceof NodeConnection.Succ) {
@@ -400,8 +395,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
     AtomicBoolean alreadySeenSelfLoop = new AtomicBoolean(false);
     return new AbstractIterator<EndpointPair<N>>() {
       @Override
-      @CheckForNull
-      protected EndpointPair<N> computeNext() {
+      protected @Nullable EndpointPair<N> computeNext() {
         while (resultWithDoubleSelfLoop.hasNext()) {
           EndpointPair<N> edge = resultWithDoubleSelfLoop.next();
           if (edge.nodeU().equals(edge.nodeV())) {
@@ -419,8 +413,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @SuppressWarnings("unchecked")
   @Override
-  @CheckForNull
-  public V value(N node) {
+  public @Nullable V value(N node) {
     checkNotNull(node);
     Object value = adjacentNodeValues.get(node);
     if (value == PRED) {
@@ -432,7 +425,6 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
     return (V) value;
   }
 
-  @SuppressWarnings("unchecked")
   @Override
   public void removePredecessor(N node) {
     checkNotNull(node);
@@ -461,8 +453,7 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @SuppressWarnings("unchecked")
   @Override
-  @CheckForNull
-  public V removeSuccessor(Object node) {
+  public @Nullable V removeSuccessor(Object node) {
     checkNotNull(node);
     Object previousValue = adjacentNodeValues.get(node);
     Object removedValue;
@@ -497,6 +488,8 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @Override
   public void addPredecessor(N node, V unused) {
+    checkNotNull(node);
+    checkNotNull(unused);
     Object previousValue = adjacentNodeValues.put(node, PRED);
     boolean addedPredecessor;
 
@@ -525,8 +518,9 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @SuppressWarnings("unchecked")
   @Override
-  @CheckForNull
-  public V addSuccessor(N node, V value) {
+  public @Nullable V addSuccessor(N node, V value) {
+    checkNotNull(node);
+    checkNotNull(value);
     Object previousValue = adjacentNodeValues.put(node, value);
     Object previousSuccessor;
 
@@ -554,11 +548,11 @@ final class DirectedGraphConnections<N, V> implements GraphConnections<N, V> {
     return previousSuccessor == null ? null : (V) previousSuccessor;
   }
 
-  private static boolean isPredecessor(@CheckForNull Object value) {
+  private static boolean isPredecessor(@Nullable Object value) {
     return (value == PRED) || (value instanceof PredAndSucc);
   }
 
-  private static boolean isSuccessor(@CheckForNull Object value) {
+  private static boolean isSuccessor(@Nullable Object value) {
     return (value != PRED) && (value != null);
   }
 }

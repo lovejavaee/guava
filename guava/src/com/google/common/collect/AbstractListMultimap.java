@@ -16,14 +16,17 @@
 
 package com.google.common.collect;
 
+import static java.util.Collections.emptyList;
+import static java.util.Collections.unmodifiableList;
+
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Basic implementation of the {@link ListMultimap} interface. It's a wrapper around {@link
@@ -34,7 +37,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nullable Object>
     extends AbstractMapBasedMultimap<K, V> implements ListMultimap<K, V> {
   /**
@@ -42,26 +44,27 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    *
    * @param map place to store the mapping from each key to its corresponding values
    */
-  protected AbstractListMultimap(Map<K, Collection<V>> map) {
+  AbstractListMultimap(Map<K, Collection<V>> map) {
     super(map);
   }
 
   @Override
   abstract List<V> createCollection();
 
+  @SuppressWarnings("EmptyList") // ImmutableList doesn't support nullable element types
   @Override
-  List<V> createUnmodifiableEmptyCollection() {
-    return Collections.emptyList();
+  final List<V> createUnmodifiableEmptyCollection() {
+    return emptyList();
   }
 
   @Override
-  <E extends @Nullable Object> Collection<E> unmodifiableCollectionSubclass(
+  final <E extends @Nullable Object> Collection<E> unmodifiableCollectionSubclass(
       Collection<E> collection) {
-    return Collections.unmodifiableList((List<E>) collection);
+    return unmodifiableList((List<E>) collection);
   }
 
   @Override
-  Collection<V> wrapCollection(@ParametricNullness K key, Collection<V> collection) {
+  final Collection<V> wrapCollection(@ParametricNullness K key, Collection<V> collection) {
     return wrapList(key, (List<V>) collection, null);
   }
 
@@ -75,7 +78,7 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    * Multimap} interface.
    */
   @Override
-  public List<V> get(@ParametricNullness K key) {
+  public final List<V> get(@ParametricNullness K key) {
     return (List<V>) super.get(key);
   }
 
@@ -88,7 +91,7 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    */
   @CanIgnoreReturnValue
   @Override
-  public List<V> removeAll(@CheckForNull Object key) {
+  public final List<V> removeAll(@Nullable Object key) {
     return (List<V>) super.removeAll(key);
   }
 
@@ -101,7 +104,7 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    */
   @CanIgnoreReturnValue
   @Override
-  public List<V> replaceValues(@ParametricNullness K key, Iterable<? extends V> values) {
+  public final List<V> replaceValues(@ParametricNullness K key, Iterable<? extends V> values) {
     return (List<V>) super.replaceValues(key, values);
   }
 
@@ -114,7 +117,7 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    */
   @CanIgnoreReturnValue
   @Override
-  public boolean put(@ParametricNullness K key, @ParametricNullness V value) {
+  public final boolean put(@ParametricNullness K key, @ParametricNullness V value) {
     return super.put(key, value);
   }
 
@@ -136,9 +139,9 @@ abstract class AbstractListMultimap<K extends @Nullable Object, V extends @Nulla
    * in the same order. If the value orderings disagree, the multimaps will not be considered equal.
    */
   @Override
-  public boolean equals(@CheckForNull Object object) {
+  public final boolean equals(@Nullable Object object) {
     return super.equals(object);
   }
 
-  private static final long serialVersionUID = 6588350623831699109L;
+  @GwtIncompatible @J2ktIncompatible   private static final long serialVersionUID = 6588350623831699109L;
 }

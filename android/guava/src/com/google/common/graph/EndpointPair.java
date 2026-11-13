@@ -19,12 +19,11 @@ package com.google.common.graph;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.graph.GraphConstants.NOT_AVAILABLE_ON_UNDIRECTED;
 
-import com.google.common.annotations.Beta;
-import com.google.common.base.Objects;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.UnmodifiableIterator;
 import com.google.errorprone.annotations.Immutable;
-import javax.annotation.CheckForNull;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An immutable pair representing the two endpoints of an edge in a graph. The {@link EndpointPair}
@@ -37,9 +36,7 @@ import javax.annotation.CheckForNull;
  * @author James Sexton
  * @since 20.0
  */
-@Beta
 @Immutable(containerOf = {"N"})
-@ElementTypesAreNonnullByDefault
 public abstract class EndpointPair<N> implements Iterable<N> {
   private final N nodeU;
   private final N nodeV;
@@ -134,10 +131,10 @@ public abstract class EndpointPair<N> implements Iterable<N> {
    * ordered {@link EndpointPair} is never equal to an unordered {@link EndpointPair}.
    */
   @Override
-  public abstract boolean equals(@CheckForNull Object obj);
+  public abstract boolean equals(@Nullable Object obj);
 
   /**
-   * The hashcode of an ordered {@link EndpointPair} is equal to {@code Objects.hashCode(source(),
+   * The hashcode of an ordered {@link EndpointPair} is equal to {@code Objects.hash(source(),
    * target())}. The hashcode of an unordered {@link EndpointPair} is equal to {@code
    * nodeU().hashCode() + nodeV().hashCode()}.
    */
@@ -165,7 +162,7 @@ public abstract class EndpointPair<N> implements Iterable<N> {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj == this) {
         return true;
       }
@@ -183,7 +180,7 @@ public abstract class EndpointPair<N> implements Iterable<N> {
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(source(), target());
+      return Objects.hash(source(), target());
     }
 
     @Override
@@ -213,7 +210,7 @@ public abstract class EndpointPair<N> implements Iterable<N> {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj == this) {
         return true;
       }

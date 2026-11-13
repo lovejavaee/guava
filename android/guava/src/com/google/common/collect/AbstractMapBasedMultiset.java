@@ -19,6 +19,7 @@ package com.google.common.collect;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.CollectPreconditions.checkNonnegative;
+import static com.google.common.collect.CollectPreconditions.checkRemove;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
@@ -32,8 +33,7 @@ import java.io.Serializable;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Basic implementation of {@code Multiset<E>} backed by an instance of {@code
@@ -44,8 +44,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *
  * @author Kevin Bourrillion
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends AbstractMultiset<E>
     implements Serializable {
 
@@ -59,7 +58,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
   abstract ObjectCountHashMap<E> newBackingMap(int distinctElements);
 
   @Override
-  public final int count(@CheckForNull Object element) {
+  public final int count(@Nullable Object element) {
     return backingMap.get(element);
   }
 
@@ -94,7 +93,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
 
   @CanIgnoreReturnValue
   @Override
-  public final int remove(@CheckForNull Object element, int occurrences) {
+  public final int remove(@Nullable Object element, int occurrences) {
     if (occurrences == 0) {
       return count(element);
     }
@@ -199,7 +198,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
     @Override
     public void remove() {
       checkForConcurrentModification();
-      CollectPreconditions.checkRemove(toRemove != -1);
+      checkRemove(toRemove != -1);
       size -= backingMap.removeEntry(toRemove);
       entryIndex = backingMap.nextIndexAfterRemove(entryIndex, toRemove);
       toRemove = -1;
@@ -219,7 +218,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
   }
 
   @Override
-  final Iterator<Entry<E>> entryIterator() {
+  final Iterator<Entry<E>> internalEntryIterator() {
     return new Itr<Entry<E>>() {
       @Override
       Entry<E> result(int entryIndex) {
@@ -229,7 +228,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
   }
 
   /** Allocation-free implementation of {@code target.addAll(this)}. */
-  void addTo(Multiset<? super E> target) {
+  final void addTo(Multiset<? super E> target) {
     checkNotNull(target);
     for (int i = backingMap.firstIndex(); i >= 0; i = backingMap.nextIndex(i)) {
       target.add(backingMap.getKey(i), backingMap.getValue(i));
@@ -237,7 +236,7 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
   }
 
   @Override
-  final int distinctElements() {
+  final int internalDistinctElements() {
     return backingMap.size();
   }
 
@@ -255,23 +254,21 @@ abstract class AbstractMapBasedMultiset<E extends @Nullable Object> extends Abst
    * @serialData the number of distinct elements, the first element, its count, the second element,
    *     its count, and so on
    */
-  @GwtIncompatible // java.io.ObjectOutputStream
+  @GwtIncompatible
   @J2ktIncompatible
-  private void writeObject(ObjectOutputStream stream) throws IOException {
+    private void writeObject(ObjectOutputStream stream) throws IOException {
     stream.defaultWriteObject();
     Serialization.writeMultiset(this, stream);
   }
 
-  @GwtIncompatible // java.io.ObjectInputStream
+  @GwtIncompatible
   @J2ktIncompatible
-  private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
+    private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
     stream.defaultReadObject();
-    int distinctElements = Serialization.readCount(stream);
+    int distinctElements = stream.readInt();
     backingMap = newBackingMap(ObjectCountHashMap.DEFAULT_SIZE);
     Serialization.populateMultiset(this, stream, distinctElements);
   }
 
-  @GwtIncompatible // Not needed in emulated source.
-  @J2ktIncompatible
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

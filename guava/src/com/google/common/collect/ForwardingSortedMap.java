@@ -17,14 +17,13 @@
 package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import java.util.Comparator;
 import java.util.NoSuchElementException;
 import java.util.SortedMap;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A sorted map which forwards all its method calls to another sorted map. Subclasses should
@@ -52,7 +51,11 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
+/*
+ * We provide and encourage use of ForwardingNavigableSet over this class, but we still provide this
+ * one to preserve compatibility.
+ */
+@SuppressWarnings("JdkObsolete")
 public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends @Nullable Object>
     extends ForwardingMap<K, V> implements SortedMap<K, V> {
   // TODO(lowasser): identify places where thread safety is actually lost
@@ -64,8 +67,7 @@ public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends 
   protected abstract SortedMap<K, V> delegate();
 
   @Override
-  @CheckForNull
-  public Comparator<? super K> comparator() {
+  public @Nullable Comparator<? super K> comparator() {
     return delegate().comparator();
   }
 
@@ -103,7 +105,6 @@ public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends 
    *
    * @since 15.0
    */
-  @Beta
   protected class StandardKeySet extends Maps.SortedKeySet<K, V> {
     /** Constructor for use by subclasses. */
     public StandardKeySet() {
@@ -114,7 +115,7 @@ public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends 
   // unsafe, but worst case is a CCE or NPE is thrown, which callers will be expecting
   @SuppressWarnings({"unchecked", "nullness"})
   static int unsafeCompare(
-      @CheckForNull Comparator<?> comparator, @CheckForNull Object o1, @CheckForNull Object o2) {
+      @Nullable Comparator<?> comparator, @Nullable Object o1, @Nullable Object o2) {
     if (comparator == null) {
       return ((Comparable<@Nullable Object>) o1).compareTo(o2);
     } else {
@@ -130,8 +131,7 @@ public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends 
    * @since 7.0
    */
   @Override
-  @Beta
-  protected boolean standardContainsKey(@CheckForNull Object key) {
+  protected boolean standardContainsKey(@Nullable Object key) {
     try {
       // any CCE or NPE will be caught
       @SuppressWarnings({"unchecked", "nullness"})
@@ -150,9 +150,31 @@ public abstract class ForwardingSortedMap<K extends @Nullable Object, V extends 
    *
    * @since 7.0
    */
-  @Beta
   protected SortedMap<K, V> standardSubMap(K fromKey, K toKey) {
     checkArgument(unsafeCompare(comparator(), fromKey, toKey) <= 0, "fromKey must be <= toKey");
     return tailMap(fromKey).headMap(toKey);
+  }
+
+  /**
+   * A simplified version of {@link ForwardingSortedMap} where subclasses can pass in an already
+   * constructed {@link SortedMap} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingSortedMap<
+          K extends @Nullable Object, V extends @Nullable Object>
+      extends ForwardingSortedMap<K, V> {
+    private final SortedMap<K, V> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingSortedMap(SortedMap<K, V> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final SortedMap<K, V> delegate() {
+      return delegate;
+    }
   }
 }

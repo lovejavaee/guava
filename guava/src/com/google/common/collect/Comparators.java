@@ -25,14 +25,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collector;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Provides static methods for working with {@link Comparator} instances. For many other helpful
- * comparator utilities, see either {@code Comparator} itself (for Java 8 or later), or {@code
+ * comparator utilities, see either {@code Comparator} itself (for Java 8+), or {@code
  * com.google.common.collect.Ordering} (otherwise).
  *
- * <h3>Relationship to {@code Ordering}</h3>
+ * <h2>Relationship to {@code Ordering}</h2>
  *
  * <p>In light of the significant enhancements to {@code Comparator} in Java 8, the overwhelming
  * majority of usages of {@code Ordering} can be written using only built-in JDK APIs. This class is
@@ -43,7 +43,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Louis Wasserman
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class Comparators {
   private Comparators() {}
 
@@ -117,11 +116,10 @@ public final class Comparators {
    *
    * <p>For example:
    *
-   * <pre>{@code
-   * Stream.of("foo", "quux", "banana", "elephant")
-   *     .collect(least(2, comparingInt(String::length)))
+   * {@snippet :
+   * Stream.of("foo", "quux", "banana", "elephant").collect(least(2, comparingInt(String::length)))
    * // returns {"foo", "quux"}
-   * }</pre>
+   * }
    *
    * <p>This {@code Collector} uses O(k) memory and takes expected time O(n) (worst-case O(n log
    * k)), as opposed to e.g. {@code Stream.sorted(comparator).limit(k)}, which currently takes O(n
@@ -149,11 +147,11 @@ public final class Comparators {
    *
    * <p>For example:
    *
-   * <pre>{@code
+   * {@snippet :
    * Stream.of("foo", "quux", "banana", "elephant")
    *     .collect(greatest(2, comparingInt(String::length)))
    * // returns {"elephant", "banana"}
-   * }</pre>
+   * }
    *
    * <p>This {@code Collector} uses O(k) memory and takes expected time O(n) (worst-case O(n log
    * k)), as opposed to e.g. {@code Stream.sorted(comparator.reversed()).limit(k)}, which currently
@@ -172,12 +170,12 @@ public final class Comparators {
    * than all other values, and orders the rest using {@code valueComparator} on the contained
    * value.
    *
-   * @since 22.0
+   * @since 22.0 (but only since 33.4.0 in the Android flavor)
    */
   public static <T> Comparator<Optional<T>> emptiesFirst(Comparator<? super T> valueComparator) {
     checkNotNull(valueComparator);
     return Comparator.<Optional<T>, @Nullable T>comparing(
-        o -> o.orElse(null), Comparator.nullsFirst(valueComparator));
+        o -> orElseNull(o), Comparator.nullsFirst(valueComparator));
   }
 
   /**
@@ -185,12 +183,17 @@ public final class Comparators {
    * than all other values, and orders the rest using {@code valueComparator} on the contained
    * value.
    *
-   * @since 22.0
+   * @since 22.0 (but only since 33.4.0 in the Android flavor)
    */
   public static <T> Comparator<Optional<T>> emptiesLast(Comparator<? super T> valueComparator) {
     checkNotNull(valueComparator);
     return Comparator.<Optional<T>, @Nullable T>comparing(
-        o -> o.orElse(null), Comparator.nullsLast(valueComparator));
+        o -> orElseNull(o), Comparator.nullsLast(valueComparator));
+  }
+
+  // For discussion of why this exists, see the Android flavor.
+  private static <T> @Nullable T orElseNull(Optional<T> optional) {
+    return optional.orElse(null);
   }
 
   /**
@@ -227,7 +230,7 @@ public final class Comparators {
    */
   @ParametricNullness
   public static <T extends @Nullable Object> T min(
-      @ParametricNullness T a, @ParametricNullness T b, Comparator<T> comparator) {
+      @ParametricNullness T a, @ParametricNullness T b, Comparator<? super T> comparator) {
     return (comparator.compare(a, b) <= 0) ? a : b;
   }
 
@@ -265,7 +268,7 @@ public final class Comparators {
    */
   @ParametricNullness
   public static <T extends @Nullable Object> T max(
-      @ParametricNullness T a, @ParametricNullness T b, Comparator<T> comparator) {
+      @ParametricNullness T a, @ParametricNullness T b, Comparator<? super T> comparator) {
     return (comparator.compare(a, b) >= 0) ? a : b;
   }
 }

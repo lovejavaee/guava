@@ -15,22 +15,23 @@
 package com.google.common.base;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Arrays.asList;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Static utility methods pertaining to {@code Predicate} instances.
+ * Static utility methods pertaining to {@link Predicate com.google.common.base.Predicate}
+ * instances; see that class for information about migrating to {@link java.util.function.Predicate
+ * java.util.function}.
  *
  * <p>All methods return serializable predicates as long as they're given serializable parameters.
  *
@@ -40,22 +41,25 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Kevin Bourrillion
  * @since 2.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class Predicates {
-  private Predicates() {}
 
-  // TODO(kevinb): considering having these implement a VisitablePredicate
-  // interface which specifies an accept(PredicateVisitor) method.
-
-  /** Returns a predicate that always evaluates to {@code true}. */
-  @GwtCompatible(serializable = true)
+  /**
+   * Returns a predicate that always evaluates to {@code true}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code x -> true}, but note that lambdas do not have
+   * human-readable {@link #toString()} representations and are not serializable.
+   */
   public static <T extends @Nullable Object> Predicate<T> alwaysTrue() {
     return ObjectPredicate.ALWAYS_TRUE.withNarrowedType();
   }
 
-  /** Returns a predicate that always evaluates to {@code false}. */
-  @GwtCompatible(serializable = true)
+  /**
+   * Returns a predicate that always evaluates to {@code false}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code x -> false}, but note that lambdas do not have
+   * human-readable {@link #toString()} representations and are not serializable.
+   */
   public static <T extends @Nullable Object> Predicate<T> alwaysFalse() {
     return ObjectPredicate.ALWAYS_FALSE.withNarrowedType();
   }
@@ -63,8 +67,11 @@ public final class Predicates {
   /**
    * Returns a predicate that evaluates to {@code true} if the object reference being tested is
    * null.
+   *
+   * <p><b>Discouraged:</b> Prefer using either {@code x -> x == null} or {@code Objects::isNull},
+   * but note that lambdas and method references do not have human-readable {@link #toString()}
+   * representations and are not serializable.
    */
-  @GwtCompatible(serializable = true)
   public static <T extends @Nullable Object> Predicate<T> isNull() {
     return ObjectPredicate.IS_NULL.withNarrowedType();
   }
@@ -72,8 +79,11 @@ public final class Predicates {
   /**
    * Returns a predicate that evaluates to {@code true} if the object reference being tested is not
    * null.
+   *
+   * <p><b>Discouraged:</b> Prefer using either {@code x -> x != null} or {@code Objects::nonNull},
+   * but note that lambdas and method references do not have human-readable {@link #toString()}
+   * representations and are not serializable.
    */
-  @GwtCompatible(serializable = true)
   public static <T extends @Nullable Object> Predicate<T> notNull() {
     return ObjectPredicate.NOT_NULL.withNarrowedType();
   }
@@ -81,6 +91,8 @@ public final class Predicates {
   /**
    * Returns a predicate that evaluates to {@code true} if the given predicate evaluates to {@code
    * false}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code predicate.negate()}.
    */
   public static <T extends @Nullable Object> Predicate<T> not(Predicate<T> predicate) {
     return new NotPredicate<>(predicate);
@@ -92,6 +104,8 @@ public final class Predicates {
    * as soon as a false predicate is found. It defensively copies the iterable passed in, so future
    * changes to it won't alter the behavior of this predicate. If {@code components} is empty, the
    * returned predicate will always evaluate to {@code true}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.and(second).and(third).and(...)}.
    */
   public static <T extends @Nullable Object> Predicate<T> and(
       Iterable<? extends Predicate<? super T>> components) {
@@ -104,6 +118,8 @@ public final class Predicates {
    * as soon as a false predicate is found. It defensively copies the array passed in, so future
    * changes to it won't alter the behavior of this predicate. If {@code components} is empty, the
    * returned predicate will always evaluate to {@code true}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.and(second).and(third).and(...)}.
    */
   @SafeVarargs
   public static <T extends @Nullable Object> Predicate<T> and(Predicate<? super T>... components) {
@@ -114,10 +130,12 @@ public final class Predicates {
    * Returns a predicate that evaluates to {@code true} if both of its components evaluate to {@code
    * true}. The components are evaluated in order, and evaluation will be "short-circuited" as soon
    * as a false predicate is found.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.and(second)}.
    */
   public static <T extends @Nullable Object> Predicate<T> and(
       Predicate<? super T> first, Predicate<? super T> second) {
-    return new AndPredicate<>(Predicates.<T>asList(checkNotNull(first), checkNotNull(second)));
+    return new AndPredicate<>(asList(checkNotNull(first), checkNotNull(second)));
   }
 
   /**
@@ -126,6 +144,8 @@ public final class Predicates {
    * as soon as a true predicate is found. It defensively copies the iterable passed in, so future
    * changes to it won't alter the behavior of this predicate. If {@code components} is empty, the
    * returned predicate will always evaluate to {@code false}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.or(second).or(third).or(...)}.
    */
   public static <T extends @Nullable Object> Predicate<T> or(
       Iterable<? extends Predicate<? super T>> components) {
@@ -138,6 +158,8 @@ public final class Predicates {
    * as soon as a true predicate is found. It defensively copies the array passed in, so future
    * changes to it won't alter the behavior of this predicate. If {@code components} is empty, the
    * returned predicate will always evaluate to {@code false}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.or(second).or(third).or(...)}.
    */
   @SafeVarargs
   public static <T extends @Nullable Object> Predicate<T> or(Predicate<? super T>... components) {
@@ -148,20 +170,24 @@ public final class Predicates {
    * Returns a predicate that evaluates to {@code true} if either of its components evaluates to
    * {@code true}. The components are evaluated in order, and evaluation will be "short-circuited"
    * as soon as a true predicate is found.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code first.or(second)}.
    */
   public static <T extends @Nullable Object> Predicate<T> or(
       Predicate<? super T> first, Predicate<? super T> second) {
-    return new OrPredicate<>(Predicates.<T>asList(checkNotNull(first), checkNotNull(second)));
+    return new OrPredicate<>(asList(checkNotNull(first), checkNotNull(second)));
   }
 
   /**
    * Returns a predicate that evaluates to {@code true} if the object being tested {@code equals()}
    * the given target or both are null.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code x -> Objects.equals(x, target)}, but note that
+   * lambdas do not have human-readable {@link #toString()} representations and are not
+   * serializable.
    */
   public static <T extends @Nullable Object> Predicate<T> equalTo(@ParametricNullness T target) {
-    return (target == null)
-        ? Predicates.<T>isNull()
-        : new IsEqualToPredicate(target).withNarrowedType();
+    return target == null ? isNull() : new IsEqualToPredicate(target).withNarrowedType();
   }
 
   /**
@@ -176,6 +202,10 @@ public final class Predicates {
    * {@link Predicate#apply}), the returned predicate may not be <i>consistent with equals</i>. For
    * example, {@code instanceOf(ArrayList.class)} will yield different results for the two equal
    * instances {@code Lists.newArrayList(1)} and {@code Arrays.asList(1)}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code clazz::isInstance} or {@code x -> x instanceof
+   * Clazz}, but note that lambdas do not have human-readable {@link #toString()} representations
+   * and are not serializable.
    */
   @GwtIncompatible // Class.isInstance
   public static <T extends @Nullable Object> Predicate<T> instanceOf(Class<?> clazz) {
@@ -186,19 +216,21 @@ public final class Predicates {
    * Returns a predicate that evaluates to {@code true} if the class being tested is assignable to
    * (is a subtype of) {@code clazz}. Example:
    *
-   * <pre>{@code
-   * List<Class<?>> classes = Arrays.asList(
-   *     Object.class, String.class, Number.class, Long.class);
+   * {@snippet :
+   * List<Class<?>> classes = Arrays.asList(Object.class, String.class, Number.class, Long.class);
    * return Iterables.filter(classes, subtypeOf(Number.class));
-   * }</pre>
+   * }
    *
    * The code above returns an iterable containing {@code Number.class} and {@code Long.class}.
+   *
+   * <p><b>Discouraged:</b> Prefer using {@code clazz::isAssignableFrom} or {@code x ->
+   * clazz.isAssignableFrom(x)}, but note that lambdas do not have human-readable {@link
+   * #toString()} representations and are not serializable.
    *
    * @since 20.0 (since 10.0 under the incorrect name {@code assignableFrom})
    */
   @J2ktIncompatible
   @GwtIncompatible // Class.isAssignableFrom
-  @Beta
   public static Predicate<Class<?>> subtypeOf(Class<?> clazz) {
     return new SubtypeOfPredicate(clazz);
   }
@@ -212,8 +244,26 @@ public final class Predicates {
    * helps prevent bugs. This approach doesn't block any potential users since it is always possible
    * to use {@code Predicates.<Object>in()}.
    *
+   * <p>You may prefer to use a method reference (e.g., {@code target::contains}) instead of this
+   * method. However, there are some subtle considerations:
+   *
+   * <ul>
+   *   <li>The {@link Predicate} returned by this method is {@link Serializable}.
+   *   <li>The {@link Predicate} returned by this method catches {@link ClassCastException} and
+   *       {@link NullPointerException}.
+   *   <li>Code that chains multiple predicates together (especially negations) may be more readable
+   *       using this method. For example, {@code not(in(target))} is generally more readable than
+   *       {@code not(target::contains)}.
+   *   <li>This method's name conflicts with Kotlin's {@code in} operator.
+   * </ul>
+   *
+   * <p><b>Discouraged:</b> Prefer using either {@code target::contains} or {@code x ->
+   * target.contains(x)}, but note that lambdas do not have human-readable {@link #toString()}
+   * representations and are not serializable.
+   *
    * @param target the collection that may contain the function input
    */
+  @SuppressWarnings("NoHardKeywords") // We're stuck with the name for compatibility reasons.
   public static <T extends @Nullable Object> Predicate<T> in(Collection<? extends T> target) {
     return new InPredicate<>(target);
   }
@@ -237,7 +287,6 @@ public final class Predicates {
    * @throws IllegalArgumentException if the pattern is invalid
    * @since 3.0
    */
-  @J2ktIncompatible
   @GwtIncompatible // Only used by other GWT-incompatible code.
   public static Predicate<CharSequence> containsPattern(String pattern) {
     return new ContainsPatternFromStringPredicate(pattern);
@@ -250,20 +299,20 @@ public final class Predicates {
    *
    * @since 3.0
    */
-  @J2ktIncompatible
-  @GwtIncompatible(value = "java.util.regex.Pattern")
+  @GwtIncompatible // java.util.regex.Pattern
   public static Predicate<CharSequence> contains(Pattern pattern) {
     return new ContainsPatternPredicate(new JdkPattern(pattern));
   }
 
   // End public API, begin private implementation classes.
 
-  // Package private for GWT serialization.
-  enum ObjectPredicate implements Predicate<@Nullable Object> {
-    /** @see Predicates#alwaysTrue() */
+  private enum ObjectPredicate implements Predicate<@Nullable Object> {
+    /**
+     * @see Predicates#alwaysTrue()
+     */
     ALWAYS_TRUE {
       @Override
-      public boolean apply(@CheckForNull Object o) {
+      public boolean apply(@Nullable Object o) {
         return true;
       }
 
@@ -272,10 +321,12 @@ public final class Predicates {
         return "Predicates.alwaysTrue()";
       }
     },
-    /** @see Predicates#alwaysFalse() */
+    /**
+     * @see Predicates#alwaysFalse()
+     */
     ALWAYS_FALSE {
       @Override
-      public boolean apply(@CheckForNull Object o) {
+      public boolean apply(@Nullable Object o) {
         return false;
       }
 
@@ -284,10 +335,12 @@ public final class Predicates {
         return "Predicates.alwaysFalse()";
       }
     },
-    /** @see Predicates#isNull() */
+    /**
+     * @see Predicates#isNull()
+     */
     IS_NULL {
       @Override
-      public boolean apply(@CheckForNull Object o) {
+      public boolean apply(@Nullable Object o) {
         return o == null;
       }
 
@@ -296,10 +349,12 @@ public final class Predicates {
         return "Predicates.isNull()";
       }
     },
-    /** @see Predicates#notNull() */
+    /**
+     * @see Predicates#notNull()
+     */
     NOT_NULL {
       @Override
-      public boolean apply(@CheckForNull Object o) {
+      public boolean apply(@Nullable Object o) {
         return o != null;
       }
 
@@ -310,13 +365,15 @@ public final class Predicates {
     };
 
     @SuppressWarnings("unchecked") // safe contravariant cast
-    <T extends @Nullable Object> Predicate<T> withNarrowedType() {
+    final <T extends @Nullable Object> Predicate<T> withNarrowedType() {
       return (Predicate<T>) this;
     }
   }
 
-  /** @see Predicates#not(Predicate) */
-  private static class NotPredicate<T extends @Nullable Object>
+  /**
+   * @see Predicates#not(Predicate)
+   */
+  private static final class NotPredicate<T extends @Nullable Object>
       implements Predicate<T>, Serializable {
     final Predicate<T> predicate;
 
@@ -335,7 +392,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof NotPredicate) {
         NotPredicate<?> that = (NotPredicate<?>) obj;
         return predicate.equals(that.predicate);
@@ -348,15 +405,17 @@ public final class Predicates {
       return "Predicates.not(" + predicate + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  /** @see Predicates#and(Iterable) */
-  private static class AndPredicate<T extends @Nullable Object>
+  /**
+   * @see Predicates#and(Iterable)
+   */
+  private static final class AndPredicate<T extends @Nullable Object>
       implements Predicate<T>, Serializable {
-    private final List<? extends Predicate<? super T>> components;
+    private final List<Predicate<? super T>> components;
 
-    private AndPredicate(List<? extends Predicate<? super T>> components) {
+    private AndPredicate(List<Predicate<? super T>> components) {
       this.components = components;
     }
 
@@ -378,7 +437,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof AndPredicate) {
         AndPredicate<?> that = (AndPredicate<?>) obj;
         return components.equals(that.components);
@@ -391,15 +450,17 @@ public final class Predicates {
       return toStringHelper("and", components);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  /** @see Predicates#or(Iterable) */
-  private static class OrPredicate<T extends @Nullable Object>
+  /**
+   * @see Predicates#or(Iterable)
+   */
+  private static final class OrPredicate<T extends @Nullable Object>
       implements Predicate<T>, Serializable {
-    private final List<? extends Predicate<? super T>> components;
+    private final List<Predicate<? super T>> components;
 
-    private OrPredicate(List<? extends Predicate<? super T>> components) {
+    private OrPredicate(List<Predicate<? super T>> components) {
       this.components = components;
     }
 
@@ -421,7 +482,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof OrPredicate) {
         OrPredicate<?> that = (OrPredicate<?>) obj;
         return components.equals(that.components);
@@ -434,7 +495,7 @@ public final class Predicates {
       return toStringHelper("or", components);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   private static String toStringHelper(String methodName, Iterable<?> components) {
@@ -450,8 +511,11 @@ public final class Predicates {
     return builder.append(')').toString();
   }
 
-  /** @see Predicates#equalTo(Object) */
-  private static class IsEqualToPredicate implements Predicate<@Nullable Object>, Serializable {
+  /**
+   * @see Predicates#equalTo(Object)
+   */
+  private static final class IsEqualToPredicate
+      implements Predicate<@Nullable Object>, Serializable {
     private final Object target;
 
     private IsEqualToPredicate(Object target) {
@@ -459,7 +523,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean apply(@CheckForNull Object o) {
+    public boolean apply(@Nullable Object o) {
       return target.equals(o);
     }
 
@@ -469,7 +533,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof IsEqualToPredicate) {
         IsEqualToPredicate that = (IsEqualToPredicate) obj;
         return target.equals(that.target);
@@ -482,7 +546,7 @@ public final class Predicates {
       return "Predicates.equalTo(" + target + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 
     @SuppressWarnings("unchecked") // safe contravariant cast
     <T extends @Nullable Object> Predicate<T> withNarrowedType() {
@@ -494,7 +558,7 @@ public final class Predicates {
    * @see Predicates#instanceOf(Class)
    */
   @GwtIncompatible // Class.isInstance
-  private static class InstanceOfPredicate<T extends @Nullable Object>
+  private static final class InstanceOfPredicate<T extends @Nullable Object>
       implements Predicate<T>, Serializable {
     private final Class<?> clazz;
 
@@ -513,7 +577,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof InstanceOfPredicate) {
         InstanceOfPredicate<?> that = (InstanceOfPredicate<?>) obj;
         return clazz == that.clazz;
@@ -534,7 +598,7 @@ public final class Predicates {
    */
   @J2ktIncompatible
   @GwtIncompatible // Class.isAssignableFrom
-  private static class SubtypeOfPredicate implements Predicate<Class<?>>, Serializable {
+  private static final class SubtypeOfPredicate implements Predicate<Class<?>>, Serializable {
     private final Class<?> clazz;
 
     private SubtypeOfPredicate(Class<?> clazz) {
@@ -552,7 +616,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof SubtypeOfPredicate) {
         SubtypeOfPredicate that = (SubtypeOfPredicate) obj;
         return clazz == that.clazz;
@@ -568,8 +632,10 @@ public final class Predicates {
     private static final long serialVersionUID = 0;
   }
 
-  /** @see Predicates#in(Collection) */
-  private static class InPredicate<T extends @Nullable Object>
+  /**
+   * @see Predicates#in(Collection)
+   */
+  private static final class InPredicate<T extends @Nullable Object>
       implements Predicate<T>, Serializable {
     private final Collection<?> target;
 
@@ -587,7 +653,13 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    /*
+     * We should probably not have implemented equals() at all, but given that we did, we can't
+     * provide a better implementation than the input Collection, at least without dramatic changes
+     * like copying it to a new Set—which might then test for element equality differently.
+     */
+    @SuppressWarnings("UndefinedEquals")
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof InPredicate) {
         InPredicate<?> that = (InPredicate<?>) obj;
         return target.equals(that.target);
@@ -605,11 +677,14 @@ public final class Predicates {
       return "Predicates.in(" + target + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  /** @see Predicates#compose(Predicate, Function) */
-  private static class CompositionPredicate<A extends @Nullable Object, B extends @Nullable Object>
+  /**
+   * @see Predicates#compose(Predicate, Function)
+   */
+  private static final class CompositionPredicate<
+          A extends @Nullable Object, B extends @Nullable Object>
       implements Predicate<A>, Serializable {
     final Predicate<B> p;
     final Function<A, ? extends B> f;
@@ -625,7 +700,7 @@ public final class Predicates {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public boolean equals(@Nullable Object obj) {
       if (obj instanceof CompositionPredicate) {
         CompositionPredicate<?, ?> that = (CompositionPredicate<?, ?>) obj;
         return f.equals(that.f) && p.equals(that.p);
@@ -644,13 +719,12 @@ public final class Predicates {
       return p + "(" + f + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /**
    * @see Predicates#contains(Pattern)
    */
-  @J2ktIncompatible
   @GwtIncompatible // Only used by other GWT-incompatible code.
   private static class ContainsPatternPredicate implements Predicate<CharSequence>, Serializable {
     final CommonPattern pattern;
@@ -665,21 +739,20 @@ public final class Predicates {
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
       // Pattern uses Object.hashCode, so we have to reach
       // inside to build a hashCode consistent with equals.
-
-      return Objects.hashCode(pattern.pattern(), pattern.flags());
+      return Objects.hash(pattern.pattern(), pattern.flags());
     }
 
     @Override
-    public boolean equals(@CheckForNull Object obj) {
+    public final boolean equals(@Nullable Object obj) {
       if (obj instanceof ContainsPatternPredicate) {
         ContainsPatternPredicate that = (ContainsPatternPredicate) obj;
 
         // Pattern uses Object (identity) equality, so we have to reach
         // inside to compare individual fields.
-        return Objects.equal(pattern.pattern(), that.pattern.pattern())
+        return Objects.equals(pattern.pattern(), that.pattern.pattern())
             && pattern.flags() == that.pattern.flags();
       }
       return false;
@@ -695,15 +768,14 @@ public final class Predicates {
       return "Predicates.contains(" + patternString + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /**
    * @see Predicates#containsPattern(String)
    */
-  @J2ktIncompatible
   @GwtIncompatible // Only used by other GWT-incompatible code.
-  private static class ContainsPatternFromStringPredicate extends ContainsPatternPredicate {
+  private static final class ContainsPatternFromStringPredicate extends ContainsPatternPredicate {
 
     ContainsPatternFromStringPredicate(String string) {
       super(Platform.compilePattern(string));
@@ -714,24 +786,20 @@ public final class Predicates {
       return "Predicates.containsPattern(" + pattern.pattern() + ")";
     }
 
-    private static final long serialVersionUID = 0;
+    @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  private static <T extends @Nullable Object> List<Predicate<? super T>> asList(
-      Predicate<? super T> first, Predicate<? super T> second) {
-    // TODO(kevinb): understand why we still get a warning despite @SafeVarargs!
-    return Arrays.<Predicate<? super T>>asList(first, second);
+  private static <T> List<T> defensiveCopy(T[] array) {
+    return defensiveCopy(asList(array));
   }
 
-  private static <T> List<T> defensiveCopy(T... array) {
-    return defensiveCopy(Arrays.asList(array));
-  }
-
-  static <T> List<T> defensiveCopy(Iterable<T> iterable) {
+  private static <T> List<T> defensiveCopy(Iterable<? extends T> iterable) {
     ArrayList<T> list = new ArrayList<>();
     for (T element : iterable) {
       list.add(checkNotNull(element));
     }
     return list;
   }
+
+  private Predicates() {}
 }

@@ -19,9 +19,9 @@ package com.google.common.io;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static java.nio.file.LinkOption.NOFOLLOW_LINKS;
+import static java.util.Arrays.asList;
 import static java.util.Objects.requireNonNull;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Optional;
@@ -55,7 +55,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.stream.Stream;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utilities for use with {@link Path} instances, intended to complement {@link Files}.
@@ -64,14 +64,12 @@ import javax.annotation.CheckForNull;
  * now available via the JDK's {@link java.nio.file.Files} class for {@code Path} - check the JDK's
  * class if a sibling method from {@code Files} appears to be missing from this class.
  *
- * @since 21.0
+ * @since 21.0 (but only since 33.4.0 in the Android flavor)
  * @author Colin Decker
  */
-@Beta
 @J2ktIncompatible
 @GwtIncompatible
 @J2ObjCIncompatible // java.nio.file
-@ElementTypesAreNonnullByDefault
 public final class MoreFiles {
 
   private MoreFiles() {}
@@ -315,7 +313,7 @@ public final class MoreFiles {
    * LinkOption...)} on input paths with the given link options.
    */
   public static Predicate<Path> isDirectory(LinkOption... options) {
-    final LinkOption[] optionsCopy = options.clone();
+    LinkOption[] optionsCopy = options.clone();
     return new Predicate<Path>() {
       @Override
       public boolean apply(Path input) {
@@ -332,7 +330,8 @@ public final class MoreFiles {
   /** Returns whether or not the file with the given name in the given dir is a directory. */
   private static boolean isDirectory(
       SecureDirectoryStream<Path> dir, Path name, LinkOption... options) throws IOException {
-    return dir.getFileAttributeView(name, BasicFileAttributeView.class, options)
+    // getFileAttributeView is required to return an instance for BasicFileAttributeView.class.
+    return requireNonNull(dir.getFileAttributeView(name, BasicFileAttributeView.class, options))
         .readAttributes()
         .isDirectory();
   }
@@ -342,7 +341,7 @@ public final class MoreFiles {
    * LinkOption...)} on input paths with the given link options.
    */
   public static Predicate<Path> isRegularFile(LinkOption... options) {
-    final LinkOption[] optionsCopy = options.clone();
+    LinkOption[] optionsCopy = options.clone();
     return new Predicate<Path>() {
       @Override
       public boolean apply(Path input) {
@@ -455,7 +454,9 @@ public final class MoreFiles {
    * behavior that the {@link Path} API does not already account for. For example, on NTFS it will
    * report {@code "txt"} as the extension for the filename {@code "foo.exe:.txt"} even though NTFS
    * will drop the {@code ":.txt"} part of the name when the file is actually created on the
-   * filesystem due to NTFS's <a href="https://goo.gl/vTpJi4">Alternate Data Streams</a>.
+   * filesystem due to NTFS's <a
+   * href="https://learn.microsoft.com/en-us/archive/blogs/askcore/alternate-data-streams-in-ntfs">Alternate
+   * Data Streams</a>.
    */
   public static String getFileExtension(Path path) {
     Path name = path.getFileName();
@@ -524,32 +525,38 @@ public final class MoreFiles {
     }
 
     Collection<IOException> exceptions = null; // created lazily if needed
-    try {
-      boolean sdsSupported = false;
-      try (DirectoryStream<Path> parent = Files.newDirectoryStream(parentPath)) {
-        if (parent instanceof SecureDirectoryStream) {
-          sdsSupported = true;
-          exceptions =
-              deleteRecursivelySecure(
-                  (SecureDirectoryStream<Path>) parent,
-                  /*
-                   * requireNonNull is safe because paths have file names when they have parents,
-                   * and we checked for a parent at the beginning of the method.
-                   */
-                  requireNonNull(path.getFileName()));
-        }
+    /*
+     * If an `IOException` is thrown by any code below this comment but above `throwDeleteFailed`,
+     * then it must have come from `newDirectoryStream` or from the `!sdsSupported` case. In either
+     * case, `exceptions` is null, so we can just let the `IOException` propagate, rather than worry
+     * about having to mix it into `exceptions`.
+     *
+     * TODO(cpovirk): Simplify this code further if possible, along with the Google-internal copy of
+     * this method in TestDir.
+     */
+    boolean sdsSupported = false;
+    /*
+     * TODO(b/331925065): Should we catch any exception from this `newDirectoryStream` call (i.e.,
+     * the one for `parentPath`), too? We should see what `rm -f` does, especially if we make
+     * "ignore errors" behavior available to users of `deleteRecursively`.
+     */
+    try (DirectoryStream<Path> parent = Files.newDirectoryStream(parentPath)) {
+      if (parent instanceof SecureDirectoryStream) {
+        sdsSupported = true;
+        exceptions =
+            deleteRecursivelySecure(
+                (SecureDirectoryStream<Path>) parent,
+                /*
+                 * requireNonNull is safe because paths have file names when they have parents,
+                 * and we checked for a parent at the beginning of the method.
+                 */
+                requireNonNull(path.getFileName()));
       }
+    }
 
-      if (!sdsSupported) {
-        checkAllowsInsecure(path, options);
-        exceptions = deleteRecursivelyInsecure(path);
-      }
-    } catch (IOException e) {
-      if (exceptions == null) {
-        throw e;
-      } else {
-        exceptions.add(e);
-      }
+    if (!sdsSupported) {
+      checkAllowsInsecure(path, options);
+      exceptions = deleteRecursivelyInsecure(path);
     }
 
     if (exceptions != null) {
@@ -616,8 +623,7 @@ public final class MoreFiles {
    * Secure recursive delete using {@code SecureDirectoryStream}. Returns a collection of exceptions
    * that occurred or null if no exceptions were thrown.
    */
-  @CheckForNull
-  private static Collection<IOException> deleteRecursivelySecure(
+  private static @Nullable Collection<IOException> deleteRecursivelySecure(
       SecureDirectoryStream<Path> dir, Path path) {
     Collection<IOException> exceptions = null;
     try {
@@ -645,8 +651,7 @@ public final class MoreFiles {
    * Secure method for deleting the contents of a directory using {@code SecureDirectoryStream}.
    * Returns a collection of exceptions that occurred or null if no exceptions were thrown.
    */
-  @CheckForNull
-  private static Collection<IOException> deleteDirectoryContentsSecure(
+  private static @Nullable Collection<IOException> deleteDirectoryContentsSecure(
       SecureDirectoryStream<Path> dir) {
     Collection<IOException> exceptions = null;
     try {
@@ -664,8 +669,7 @@ public final class MoreFiles {
    * Insecure recursive delete for file systems that don't support {@code SecureDirectoryStream}.
    * Returns a collection of exceptions that occurred or null if no exceptions were thrown.
    */
-  @CheckForNull
-  private static Collection<IOException> deleteRecursivelyInsecure(Path path) {
+  private static @Nullable Collection<IOException> deleteRecursivelyInsecure(Path path) {
     Collection<IOException> exceptions = null;
     try {
       if (Files.isDirectory(path, NOFOLLOW_LINKS)) {
@@ -691,8 +695,7 @@ public final class MoreFiles {
    * support {@code SecureDirectoryStream}. Returns a collection of exceptions that occurred or null
    * if no exceptions were thrown.
    */
-  @CheckForNull
-  private static Collection<IOException> deleteDirectoryContentsInsecure(
+  private static @Nullable Collection<IOException> deleteDirectoryContentsInsecure(
       DirectoryStream<Path> dir) {
     Collection<IOException> exceptions = null;
     try {
@@ -711,8 +714,7 @@ public final class MoreFiles {
    * path, this is simple. Otherwise, we need to do some trickier things. Returns null if the path
    * is a root or is the empty path.
    */
-  @CheckForNull
-  private static Path getParentPath(Path path) {
+  private static @Nullable Path getParentPath(Path path) {
     Path parent = path.getParent();
 
     // Paths that have a parent:
@@ -748,7 +750,7 @@ public final class MoreFiles {
   /** Checks that the given options allow an insecure delete, throwing an exception if not. */
   private static void checkAllowsInsecure(Path path, RecursiveDeleteOption[] options)
       throws InsecureRecursiveDeleteException {
-    if (!Arrays.asList(options).contains(RecursiveDeleteOption.ALLOW_INSECURE)) {
+    if (!asList(options).contains(RecursiveDeleteOption.ALLOW_INSECURE)) {
       throw new InsecureRecursiveDeleteException(path.toString());
     }
   }
@@ -758,7 +760,7 @@ public final class MoreFiles {
    * the collection.
    */
   private static Collection<IOException> addException(
-      @CheckForNull Collection<IOException> exceptions, IOException e) {
+      @Nullable Collection<IOException> exceptions, IOException e) {
     if (exceptions == null) {
       exceptions = new ArrayList<>(); // don't need Set semantics
     }
@@ -771,10 +773,8 @@ public final class MoreFiles {
    * null, the other collection is returned. Otherwise, the elements of {@code other} are added to
    * {@code exceptions} and {@code exceptions} is returned.
    */
-  @CheckForNull
-  private static Collection<IOException> concat(
-      @CheckForNull Collection<IOException> exceptions,
-      @CheckForNull Collection<IOException> other) {
+  private static @Nullable Collection<IOException> concat(
+      @Nullable Collection<IOException> exceptions, @Nullable Collection<IOException> other) {
     if (exceptions == null) {
       return other;
     } else if (other != null) {
@@ -811,8 +811,8 @@ public final class MoreFiles {
     throw deleteFailed;
   }
 
-  @CheckForNull
-  private static NoSuchFileException pathNotFound(Path path, Collection<IOException> exceptions) {
+  private static @Nullable NoSuchFileException pathNotFound(
+      Path path, Collection<IOException> exceptions) {
     if (exceptions.size() != 1) {
       return null;
     }

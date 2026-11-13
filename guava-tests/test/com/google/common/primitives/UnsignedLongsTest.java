@@ -14,12 +14,17 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.collect.testing.Helpers.testComparator;
+import static com.google.common.primitives.UnsignedLongs.max;
+import static com.google.common.primitives.UnsignedLongs.min;
 import static com.google.common.truth.Truth.assertThat;
 import static java.math.BigInteger.ONE;
+import static java.util.Arrays.asList;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.collect.testing.Helpers;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.testing.NullPointerTester;
 import java.math.BigInteger;
 import java.util.Arrays;
@@ -27,6 +32,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Tests for UnsignedLongs
@@ -34,7 +40,8 @@ import junit.framework.TestCase;
  * @author Brian Milch
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullUnmarked
 public class UnsignedLongsTest extends TestCase {
   private static final long LEAST = 0L;
   private static final long GREATEST = 0xffffffffffffffffL;
@@ -61,54 +68,42 @@ public class UnsignedLongsTest extends TestCase {
   }
 
   public void testMax_noArgs() {
-    try {
-      UnsignedLongs.max();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> max());
   }
 
   public void testMax() {
-    assertThat(UnsignedLongs.max(LEAST)).isEqualTo(LEAST);
-    assertThat(UnsignedLongs.max(GREATEST)).isEqualTo(GREATEST);
-    assertThat(
-            UnsignedLongs.max(
-                0x5a4316b8c153ac4dL, 8L, 100L, 0L, 0x6cf78a4b139a4e2aL, 0xff1a618b7f65ea12L))
+    assertThat(max(LEAST)).isEqualTo(LEAST);
+    assertThat(max(GREATEST)).isEqualTo(GREATEST);
+    assertThat(max(0x5a4316b8c153ac4dL, 8L, 100L, 0L, 0x6cf78a4b139a4e2aL, 0xff1a618b7f65ea12L))
         .isEqualTo(0xff1a618b7f65ea12L);
   }
 
   public void testMin_noArgs() {
-    try {
-      UnsignedLongs.min();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> min());
   }
 
   public void testMin() {
-    assertThat(UnsignedLongs.min(LEAST)).isEqualTo(LEAST);
-    assertThat(UnsignedLongs.min(GREATEST)).isEqualTo(GREATEST);
-    assertThat(
-            UnsignedLongs.min(
-                0x5a4316b8c153ac4dL, 8L, 100L, 0L, 0x6cf78a4b139a4e2aL, 0xff1a618b7f65ea12L))
+    assertThat(min(LEAST)).isEqualTo(LEAST);
+    assertThat(min(GREATEST)).isEqualTo(GREATEST);
+    assertThat(min(0x5a4316b8c153ac4dL, 8L, 100L, 0L, 0x6cf78a4b139a4e2aL, 0xff1a618b7f65ea12L))
         .isEqualTo(0L);
   }
 
   public void testLexicographicalComparator() {
     List<long[]> ordered =
-        Arrays.asList(
+        asList(
             new long[] {},
             new long[] {LEAST},
             new long[] {LEAST, LEAST},
-            new long[] {LEAST, (long) 1},
-            new long[] {(long) 1},
-            new long[] {(long) 1, LEAST},
-            new long[] {GREATEST, GREATEST - (long) 1},
+            new long[] {LEAST, 1L},
+            new long[] {1L},
+            new long[] {1L, LEAST},
+            new long[] {GREATEST, GREATEST - 1L},
             new long[] {GREATEST, GREATEST},
             new long[] {GREATEST, GREATEST, GREATEST});
 
     Comparator<long[]> comparator = UnsignedLongs.lexicographicalComparator();
-    Helpers.testComparator(comparator, ordered);
+    testComparator(comparator, ordered);
   }
 
   public void testSort() {
@@ -224,20 +219,12 @@ public class UnsignedLongsTest extends TestCase {
   }
 
   public void testParseLongEmptyString() {
-    try {
-      UnsignedLongs.parseUnsignedLong("");
-      fail("NumberFormatException should have been raised.");
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.parseUnsignedLong(""));
   }
 
   public void testParseLongFails() {
-    try {
-      // One more than maximum value
-      UnsignedLongs.parseUnsignedLong("18446744073709551616");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(
+        NumberFormatException.class, () -> UnsignedLongs.parseUnsignedLong("18446744073709551616"));
   }
 
   public void testDecodeLong() {
@@ -251,30 +238,13 @@ public class UnsignedLongsTest extends TestCase {
   }
 
   public void testDecodeLongFails() {
-    try {
-      // One more than maximum value
-      UnsignedLongs.decode("0xfffffffffffffffff");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.decode("0xfffffffffffffffff"));
 
-    try {
-      UnsignedLongs.decode("-5");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.decode("-5"));
 
-    try {
-      UnsignedLongs.decode("-0x5");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.decode("-0x5"));
 
-    try {
-      UnsignedLongs.decode("-05");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.decode("-05"));
   }
 
   public void testParseLongWithRadix() {
@@ -287,48 +257,36 @@ public class UnsignedLongsTest extends TestCase {
   public void testParseLongWithRadixLimits() {
     BigInteger max = BigInteger.ZERO.setBit(64).subtract(ONE);
     // loops through all legal radix values.
-    for (int radix = Character.MIN_RADIX; radix <= Character.MAX_RADIX; radix++) {
+    for (int r = Character.MIN_RADIX; r <= Character.MAX_RADIX; r++) {
+      int radix = r;
       // tests can successfully parse a number string with this radix.
       String maxAsString = max.toString(radix);
       assertThat(UnsignedLongs.parseUnsignedLong(maxAsString, radix)).isEqualTo(max.longValue());
 
-      try {
-        // tests that we get exception where an overflow would occur.
-        BigInteger overflow = max.add(ONE);
-        String overflowAsString = overflow.toString(radix);
-        UnsignedLongs.parseUnsignedLong(overflowAsString, radix);
-        fail();
-      } catch (NumberFormatException expected) {
-      }
+      BigInteger overflow = max.add(ONE);
+      String overflowAsString = overflow.toString(radix);
+      assertThrows(
+          NumberFormatException.class,
+          () -> UnsignedLongs.parseUnsignedLong(overflowAsString, radix));
     }
 
-    try {
-      UnsignedLongs.parseUnsignedLong("1234567890abcdef1", 16);
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(
+        NumberFormatException.class,
+        () -> UnsignedLongs.parseUnsignedLong("1234567890abcdef1", 16));
   }
 
   public void testParseLongThrowsExceptionForInvalidRadix() {
     // Valid radix values are Character.MIN_RADIX to Character.MAX_RADIX, inclusive.
-    try {
-      UnsignedLongs.parseUnsignedLong("0", Character.MIN_RADIX - 1);
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(
+        NumberFormatException.class,
+        () -> UnsignedLongs.parseUnsignedLong("0", Character.MIN_RADIX - 1));
 
-    try {
-      UnsignedLongs.parseUnsignedLong("0", Character.MAX_RADIX + 1);
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(
+        NumberFormatException.class,
+        () -> UnsignedLongs.parseUnsignedLong("0", Character.MAX_RADIX + 1));
 
     // The radix is used as an array index, so try a negative value.
-    try {
-      UnsignedLongs.parseUnsignedLong("0", -1);
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedLongs.parseUnsignedLong("0", -1));
   }
 
   public void testToString() {
@@ -361,6 +319,7 @@ public class UnsignedLongsTest extends TestCase {
         .isEqualTo("184467440737095516159223372036854775808");
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(UnsignedLongs.class);

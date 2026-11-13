@@ -17,13 +17,13 @@
 package com.google.common.graph;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Maps.asMap;
 
-import com.google.common.annotations.Beta;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.Immutable;
+import com.google.errorprone.annotations.InlineMe;
 import java.util.Map;
 
 /**
@@ -43,10 +43,8 @@ import java.util.Map;
  * @param <E> Edge parameter type
  * @since 20.0
  */
-@Beta
 @Immutable(containerOf = {"N", "E"})
 @SuppressWarnings("Immutable") // Extends StandardNetwork but uses ImmutableMaps.
-@ElementTypesAreNonnullByDefault
 public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
 
   private ImmutableNetwork(Network<N, E> network) {
@@ -66,6 +64,9 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
    *
    * @deprecated no need to use this
    */
+  @InlineMe(
+      replacement = "checkNotNull(network)",
+      staticImports = "com.google.common.base.Preconditions.checkNotNull")
   @Deprecated
   public static <N, E> ImmutableNetwork<N, E> copyOf(ImmutableNetwork<N, E> network) {
     return checkNotNull(network);
@@ -100,15 +101,14 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
 
   private static <N, E> NetworkConnections<N, E> connectionsOf(Network<N, E> network, N node) {
     if (network.isDirected()) {
-      Map<E, N> inEdgeMap = Maps.asMap(network.inEdges(node), sourceNodeFn(network));
-      Map<E, N> outEdgeMap = Maps.asMap(network.outEdges(node), targetNodeFn(network));
+      Map<E, N> inEdgeMap = asMap(network.inEdges(node), sourceNodeFn(network));
+      Map<E, N> outEdgeMap = asMap(network.outEdges(node), targetNodeFn(network));
       int selfLoopCount = network.edgesConnecting(node, node).size();
       return network.allowsParallelEdges()
           ? DirectedMultiNetworkConnections.ofImmutable(inEdgeMap, outEdgeMap, selfLoopCount)
           : DirectedNetworkConnections.ofImmutable(inEdgeMap, outEdgeMap, selfLoopCount);
     } else {
-      Map<E, N> incidentEdgeMap =
-          Maps.asMap(network.incidentEdges(node), adjacentNodeFn(network, node));
+      Map<E, N> incidentEdgeMap = asMap(network.incidentEdges(node), adjacentNodeFn(network, node));
       return network.allowsParallelEdges()
           ? UndirectedMultiNetworkConnections.ofImmutable(incidentEdgeMap)
           : UndirectedNetworkConnections.ofImmutable(incidentEdgeMap);
@@ -131,7 +131,7 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
    * A builder for creating {@link ImmutableNetwork} instances, especially {@code static final}
    * networks. Example:
    *
-   * <pre>{@code
+   * {@snippet :
    * static final ImmutableNetwork<City, Train> TRAIN_NETWORK =
    *     NetworkBuilder.undirected()
    *         .allowsParallelEdges(true)
@@ -142,7 +142,7 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
    *         .addEdge(LONDON, BRUSSELS, Eurostar.trainNumber("4444"))
    *         .addNode(REYKJAVIK)
    *         .build();
-   * }</pre>
+   * }
    *
    * <p>Builder instances can be reused; it is safe to call {@link #build} multiple times to build
    * multiple networks in series. Each new network contains all the elements of the ones created
@@ -150,7 +150,7 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
    *
    * @since 28.0
    */
-  public static class Builder<N, E> {
+  public static final class Builder<N, E> {
 
     private final MutableNetwork<N, E> mutableNetwork;
 
@@ -234,7 +234,7 @@ public final class ImmutableNetwork<N, E> extends StandardNetwork<N, E> {
      * Builder}.
      */
     public ImmutableNetwork<N, E> build() {
-      return ImmutableNetwork.copyOf(mutableNetwork);
+      return copyOf(mutableNetwork);
     }
   }
 }

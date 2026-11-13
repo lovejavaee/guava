@@ -18,19 +18,26 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
+import static java.lang.Math.floorMod;
+import static java.lang.System.arraycopy;
+import static java.util.Arrays.sort;
+import static java.util.Collections.emptyList;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Converter;
+import com.google.errorprone.annotations.InlineMe;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.RandomAccess;
-import javax.annotation.CheckForNull;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utility methods pertaining to {@code long} primitives, that are not already found in
@@ -43,16 +50,15 @@ import javax.annotation.CheckForNull;
  * @since 1.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class Longs {
   private Longs() {}
 
   /**
    * The number of bytes required to represent a primitive {@code long} value.
    *
-   * <p><b>Java 8 users:</b> use {@link Long#BYTES} instead.
+   * <p>Prefer {@link Long#BYTES} instead.
    */
-  public static final int BYTES = Long.SIZE / Byte.SIZE;
+  public static final int BYTES = Long.BYTES;
 
   /**
    * The largest power of two that can be represented as a {@code long}.
@@ -62,27 +68,21 @@ public final class Longs {
   public static final long MAX_POWER_OF_TWO = 1L << (Long.SIZE - 2);
 
   /**
-   * Returns a hash code for {@code value}; equal to the result of invoking {@code ((Long)
-   * value).hashCode()}.
-   *
-   * <p>This method always return the value specified by {@link Long#hashCode()} in java, which
-   * might be different from {@code ((Long) value).hashCode()} in GWT because {@link
-   * Long#hashCode()} in GWT does not obey the JRE contract.
-   *
-   * <p><b>Java 8 users:</b> use {@link Long#hashCode(long)} instead.
+   * Returns a hash code for {@code value}; obsolete alternative to {@link Long#hashCode(long)}.
    *
    * @param value a primitive {@code long} value
    * @return a hash code for the value
    */
+  @InlineMe(replacement = "Long.hashCode(value)")
   public static int hashCode(long value) {
-    return (int) (value ^ (value >>> 32));
+    return Long.hashCode(value);
   }
 
   /**
    * Compares the two specified {@code long} values. The sign of the value returned is the same as
    * that of {@code ((Long) a).compareTo(b)}.
    *
-   * <p><b>Note for Java 7 and later:</b> this method should be treated as deprecated; use the
+   * <p><b>Note:</b> this method is now unnecessary and should be treated as deprecated; use the
    * equivalent {@link Long#compare} method instead.
    *
    * @param a the first {@code long} to compare
@@ -90,8 +90,9 @@ public final class Longs {
    * @return a negative value if {@code a} is less than {@code b}; a positive value if {@code a} is
    *     greater than {@code b}; or zero if they are equal
    */
+  @InlineMe(replacement = "Long.compare(a, b)")
   public static int compare(long a, long b) {
-    return (a < b) ? -1 : ((a > b) ? 1 : 0);
+    return Long.compare(a, b);
   }
 
   /**
@@ -122,9 +123,20 @@ public final class Longs {
     return indexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int indexOf(long[] array, long target, int start, int end) {
-    for (int i = start; i < end; i++) {
+  /**
+   * Returns the index of the first appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the least index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i] ==
+   *     target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(long[] array, long target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = fromIndex; i < toIndex; i++) {
       if (array[i] == target) {
         return i;
       }
@@ -143,14 +155,32 @@ public final class Longs {
    * @param target the array to search for as a sub-sequence of {@code array}
    */
   public static int indexOf(long[] array, long[] target) {
+    return indexOf(array, target, 0, array.length);
+  }
+
+  /**
+   * Returns the start position of the first occurrence of the specified {@code target} within
+   * {@code array} between {@code fromIndex} inclusive and {@code toIndex} exclusive, or {@code -1}
+   * if there is no such occurrence.
+   *
+   * <p>More formally, returns the lowest index {@code i} such that {@code i >= fromIndex}, {@code i
+   * + target.length <= toIndex}, and {@code Arrays.copyOfRange(array, i, i + target.length)}
+   * contains exactly the same elements as {@code target}.
+   *
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(long[] array, long[] target, int fromIndex, int toIndex) {
     checkNotNull(array, "array");
     checkNotNull(target, "target");
+    checkPositionIndexes(fromIndex, toIndex, array.length);
     if (target.length == 0) {
-      return 0;
+      return fromIndex;
     }
 
     outer:
-    for (int i = 0; i < array.length - target.length + 1; i++) {
+    for (int i = fromIndex; i < toIndex - target.length + 1; i++) {
       for (int j = 0; j < target.length; j++) {
         if (array[i + j] != target[j]) {
           continue outer;
@@ -173,9 +203,20 @@ public final class Longs {
     return lastIndexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int lastIndexOf(long[] array, long target, int start, int end) {
-    for (int i = end - 1; i >= start; i--) {
+  /**
+   * Returns the index of the last appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the greatest index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i]
+   *     == target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int lastIndexOf(long[] array, long target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = toIndex - 1; i >= fromIndex; i--) {
       if (array[i] == target) {
         return i;
       }
@@ -228,13 +269,16 @@ public final class Longs {
    * unchanged. If {@code value} is less than {@code min}, {@code min} is returned, and if {@code
    * value} is greater than {@code max}, {@code max} is returned.
    *
+   * <p><b>Java 21+ users:</b> Use {@link Math#clamp(long, long, long)} instead. Note that that
+   * method comes with {@linkplain Math#clamp(long, int, int) an overload} that is capable of
+   * constraining a {@code long} input to an {@code int} range.
+   *
    * @param value the {@code long} value to constrain
    * @param min the lower bound (inclusive) of the range to constrain {@code value} to
    * @param max the upper bound (inclusive) of the range to constrain {@code value} to
    * @throws IllegalArgumentException if {@code min > max}
    * @since 21.0
    */
-  @Beta
   public static long constrainToRange(long value, long min, long max) {
     checkArgument(min <= max, "min (%s) must be less than or equal to max (%s)", min, max);
     return Math.min(Math.max(value, min), max);
@@ -246,19 +290,29 @@ public final class Longs {
    *
    * @param arrays zero or more {@code long} arrays
    * @return a single array containing all the values from the source arrays, in order
+   * @throws IllegalArgumentException if the total number of elements in {@code arrays} does not fit
+   *     in an {@code int}
    */
   public static long[] concat(long[]... arrays) {
-    int length = 0;
+    long length = 0;
     for (long[] array : arrays) {
       length += array.length;
     }
-    long[] result = new long[length];
+    long[] result = new long[checkNoOverflow(length)];
     int pos = 0;
     for (long[] array : arrays) {
-      System.arraycopy(array, 0, result, pos, array.length);
+      arraycopy(array, 0, result, pos, array.length);
       pos += array.length;
     }
     return result;
+  }
+
+  private static int checkNoOverflow(long result) {
+    checkArgument(
+        result == (int) result,
+        "the total number of elements (%s) in the arrays must fit in an int",
+        result);
+    return (int) result;
   }
 
   /**
@@ -271,9 +325,10 @@ public final class Longs {
    * use a shared {@link java.nio.ByteBuffer} instance, or use {@link
    * com.google.common.io.ByteStreams#newDataOutput()} to get a growable buffer.
    */
+  // We use `& 0xff` before casting to `(byte)` to keep GWT from letting the byte be out of range:
+  // https://www.gwtproject.org/doc/latest/DevGuideCodingBasicsCompatibility
+  @SuppressWarnings("MaskAndCastToByte")
   public static byte[] toByteArray(long value) {
-    // Note that this code needs to stay compatible with GWT, which has known
-    // bugs when narrowing byte casts of long values occur.
     byte[] result = new byte[8];
     for (int i = 7; i >= 0; i--) {
       result[i] = (byte) (value & 0xffL);
@@ -345,15 +400,15 @@ public final class Longs {
   }
 
   /**
-   * Parses the specified string as a signed decimal long value. The ASCII character {@code '-'} (
-   * <code>'&#92;u002D'</code>) is recognized as the minus sign.
+   * Parses the specified string as a signed decimal long value. The ASCII character {@code '-'}
+   * (U+002D) is recognized as the minus sign.
    *
    * <p>Unlike {@link Long#parseLong(String)}, this method returns {@code null} instead of throwing
    * an exception if parsing fails. Additionally, this method only accepts ASCII digits, and returns
    * {@code null} if non-ASCII digits are present in the string.
    *
-   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even under JDK 7, despite
-   * the change to {@link Long#parseLong(String)} for that version.
+   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even though {@link
+   * Integer#parseInt(String)} accepts them.
    *
    * @param string the string representation of a long value
    * @return the long value represented by {@code string}, or {@code null} if {@code string} has a
@@ -361,21 +416,20 @@ public final class Longs {
    * @throws NullPointerException if {@code string} is {@code null}
    * @since 14.0
    */
-  @CheckForNull
-  public static Long tryParse(String string) {
+  public static @Nullable Long tryParse(String string) {
     return tryParse(string, 10);
   }
 
   /**
    * Parses the specified string as a signed long value using the specified radix. The ASCII
-   * character {@code '-'} (<code>'&#92;u002D'</code>) is recognized as the minus sign.
+   * character {@code '-'} (U+002D) is recognized as the minus sign.
    *
    * <p>Unlike {@link Long#parseLong(String, int)}, this method returns {@code null} instead of
    * throwing an exception if parsing fails. Additionally, this method only accepts ASCII digits,
    * and returns {@code null} if non-ASCII digits are present in the string.
    *
-   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even under JDK 7, despite
-   * the change to {@link Long#parseLong(String, int)} for that version.
+   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even though {@link
+   * Integer#parseInt(String)} accepts them.
    *
    * @param string the string representation of a long value
    * @param radix the radix to use when parsing
@@ -386,8 +440,7 @@ public final class Longs {
    * @throws NullPointerException if {@code string} is {@code null}
    * @since 19.0
    */
-  @CheckForNull
-  public static Long tryParse(String string, int radix) {
+  public static @Nullable Long tryParse(String string, int radix) {
     if (checkNotNull(string).isEmpty()) {
       return null;
     }
@@ -430,7 +483,7 @@ public final class Longs {
   }
 
   private static final class LongConverter extends Converter<String, Long> implements Serializable {
-    static final LongConverter INSTANCE = new LongConverter();
+    static final Converter<String, Long> INSTANCE = new LongConverter();
 
     @Override
     protected Long doForward(String value) {
@@ -451,7 +504,7 @@ public final class Longs {
       return INSTANCE;
     }
 
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
   }
 
   /**
@@ -465,7 +518,6 @@ public final class Longs {
    *
    * @since 16.0
    */
-  @Beta
   public static Converter<String, Long> stringConverter() {
     return LongConverter.INSTANCE;
   }
@@ -536,7 +588,7 @@ public final class Longs {
     public int compare(long[] left, long[] right) {
       int minLength = Math.min(left.length, right.length);
       for (int i = 0; i < minLength; i++) {
-        int result = Longs.compare(left[i], right[i]);
+        int result = Long.compare(left[i], right[i]);
         if (result != 0) {
           return result;
         }
@@ -569,7 +621,7 @@ public final class Longs {
   public static void sortDescending(long[] array, int fromIndex, int toIndex) {
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    Arrays.sort(array, fromIndex, toIndex);
+    sort(array, fromIndex, toIndex);
     reverse(array, fromIndex, toIndex);
   }
 
@@ -612,7 +664,7 @@ public final class Longs {
    *
    * <p>The provided "distance" may be negative, which will rotate left.
    *
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(long[] array, int distance) {
     rotate(array, distance, 0, array.length);
@@ -628,26 +680,24 @@ public final class Longs {
    *
    * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
    *     {@code toIndex > fromIndex}
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(long[] array, int distance, int fromIndex, int toIndex) {
     // See Ints.rotate for more details about possible algorithms here.
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    if (array.length <= 1) {
+    int length = toIndex - fromIndex;
+    if (length <= 1) {
       return;
     }
 
-    int length = toIndex - fromIndex;
-    // Obtain m = (-distance mod length), a non-negative value less than "length". This is how many
-    // places left to rotate.
-    int m = -distance % length;
-    m = (m < 0) ? m + length : m;
-    // The current index of what will become the first element of the rotated section.
-    int newFirstIndex = m + fromIndex;
-    if (newFirstIndex == fromIndex) {
+    // Map the given distance to an equivalent, non-negative value less than "length".
+    distance = floorMod(distance, length);
+    if (distance == 0) {
       return;
     }
+    // The current index of what will become the first element of the rotated section.
+    int newFirstIndex = toIndex - distance;
 
     reverse(array, fromIndex, newFirstIndex);
     reverse(array, newFirstIndex, toIndex);
@@ -701,13 +751,12 @@ public final class Longs {
    */
   public static List<Long> asList(long... backingArray) {
     if (backingArray.length == 0) {
-      return Collections.emptyList();
+      return emptyList();
     }
     return new LongArrayAsList(backingArray);
   }
 
-  @GwtCompatible
-  private static class LongArrayAsList extends AbstractList<Long>
+  private static final class LongArrayAsList extends AbstractList<Long>
       implements RandomAccess, Serializable {
     final long[] array;
     final int start;
@@ -740,13 +789,23 @@ public final class Longs {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object target) {
+    /*
+     * This is an override that is not directly visible to callers, so NewApi will catch calls to
+     * Collection.spliterator() where necessary.
+     */
+    @IgnoreJRERequirement
+    public Spliterator.OfLong spliterator() {
+      return Spliterators.spliterator(array, start, end, 0);
+    }
+
+    @Override
+    public boolean contains(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       return (target instanceof Long) && Longs.indexOf(array, (Long) target, start, end) != -1;
     }
 
     @Override
-    public int indexOf(@CheckForNull Object target) {
+    public int indexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Long) {
         int i = Longs.indexOf(array, (Long) target, start, end);
@@ -758,7 +817,7 @@ public final class Longs {
     }
 
     @Override
-    public int lastIndexOf(@CheckForNull Object target) {
+    public int lastIndexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Long) {
         int i = Longs.lastIndexOf(array, (Long) target, start, end);
@@ -783,13 +842,13 @@ public final class Longs {
       int size = size();
       checkPositionIndexes(fromIndex, toIndex, size);
       if (fromIndex == toIndex) {
-        return Collections.emptyList();
+        return emptyList();
       }
       return new LongArrayAsList(array, start + fromIndex, start + toIndex);
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object == this) {
         return true;
       }
@@ -813,7 +872,7 @@ public final class Longs {
     public int hashCode() {
       int result = 1;
       for (int i = start; i < end; i++) {
-        result = 31 * result + Longs.hashCode(array[i]);
+        result = 31 * result + Long.hashCode(array[i]);
       }
       return result;
     }
@@ -832,6 +891,6 @@ public final class Longs {
       return Arrays.copyOfRange(array, start, end);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 }

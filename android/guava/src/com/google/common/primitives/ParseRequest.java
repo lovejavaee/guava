@@ -18,7 +18,6 @@ import com.google.common.annotations.GwtCompatible;
 
 /** A string to be parsed as a number and the radix to interpret it in. */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 final class ParseRequest {
   final String rawValue;
   final int radix;
@@ -29,7 +28,7 @@ final class ParseRequest {
   }
 
   static ParseRequest fromString(String stringValue) {
-    if (stringValue.length() == 0) {
+    if (stringValue.isEmpty()) {
       throw new NumberFormatException("empty string");
     }
 

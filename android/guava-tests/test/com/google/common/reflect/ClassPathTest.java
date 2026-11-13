@@ -15,10 +15,11 @@
  */
 package com.google.common.reflect;
 
-import static com.google.common.base.Charsets.US_ASCII;
 import static com.google.common.base.StandardSystemProperty.JAVA_CLASS_PATH;
+import static com.google.common.base.StandardSystemProperty.OS_NAME;
 import static com.google.common.base.StandardSystemProperty.PATH_SEPARATOR;
 import static com.google.common.truth.Truth.assertThat;
+import static java.nio.charset.StandardCharsets.US_ASCII;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
@@ -33,24 +34,23 @@ import com.google.common.testing.NullPointerTester;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FilePermission;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.security.Permission;
-import java.security.PermissionCollection;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 import org.junit.Test;
 
 /** Functional tests of {@link ClassPath}. */
+@NullUnmarked
 public class ClassPathTest extends TestCase {
   private static final Logger log = Logger.getLogger(ClassPathTest.class.getName());
   private static final File FILE = new File(".");
@@ -66,14 +66,12 @@ public class ClassPathTest extends TestCase {
         .testEquals();
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_emptyURLClassLoader_noParent() {
     assertThat(ClassPath.getClassPathEntries(new URLClassLoader(new URL[0], null)).keySet())
         .isEmpty();
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
-  public void testClassPathEntries_URLClassLoader_noParent() throws Exception {
+  public void testClassPathEntries_urlClassLoader_noParent() throws Exception {
     URL url1 = new URL("file:/a");
     URL url2 = new URL("file:/b");
     URLClassLoader classloader = new URLClassLoader(new URL[] {url1, url2}, null);
@@ -81,8 +79,7 @@ public class ClassPathTest extends TestCase {
         .containsExactly(new File("/a"), classloader, new File("/b"), classloader);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
-  public void testClassPathEntries_URLClassLoader_withParent() throws Exception {
+  public void testClassPathEntries_urlClassLoader_withParent() throws Exception {
     URL url1 = new URL("file:/a");
     URL url2 = new URL("file:/b");
     URLClassLoader parent = new URLClassLoader(new URL[] {url1}, null);
@@ -92,7 +89,6 @@ public class ClassPathTest extends TestCase {
         .inOrder();
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_duplicateUri_parentWins() throws Exception {
     URL url = new URL("file:/a");
     URLClassLoader parent = new URLClassLoader(new URL[] {url}, null);
@@ -100,12 +96,10 @@ public class ClassPathTest extends TestCase {
     assertThat(ClassPath.getClassPathEntries(child)).containsExactly(new File("/a"), parent);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_notURLClassLoader_noParent() {
     assertThat(ClassPath.getClassPathEntries(new ClassLoader(null) {})).isEmpty();
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_notURLClassLoader_withParent() throws Exception {
     URL url = new URL("file:/a");
     URLClassLoader parent = new URLClassLoader(new URL[] {url}, null);
@@ -113,7 +107,6 @@ public class ClassPathTest extends TestCase {
         .containsExactly(new File("/a"), parent);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_notURLClassLoader_withParentAndGrandParent() throws Exception {
     URL url1 = new URL("file:/a");
     URL url2 = new URL("file:/b");
@@ -123,7 +116,6 @@ public class ClassPathTest extends TestCase {
         .containsExactly(new File("/a"), grandParent, new File("/b"), parent);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   public void testClassPathEntries_notURLClassLoader_withGrandParent() throws Exception {
     URL url = new URL("file:/a");
     URLClassLoader grandParent = new URLClassLoader(new URL[] {url}, null);
@@ -132,18 +124,16 @@ public class ClassPathTest extends TestCase {
         .containsExactly(new File("/a"), grandParent);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   // https://github.com/google/guava/issues/2152
-  public void testClassPathEntries_URLClassLoader_pathWithSpace() throws Exception {
+  public void testClassPathEntries_urlClassLoader_pathWithSpace() throws Exception {
     URL url = new URL("file:///c:/Documents and Settings/");
     URLClassLoader classloader = new URLClassLoader(new URL[] {url}, null);
     assertThat(ClassPath.getClassPathEntries(classloader))
         .containsExactly(new File("/c:/Documents and Settings/"), classloader);
   }
 
-  @AndroidIncompatible // Android forbids null parent ClassLoader
   // https://github.com/google/guava/issues/2152
-  public void testClassPathEntries_URLClassLoader_pathWithEscapedSpace() throws Exception {
+  public void testClassPathEntries_urlClassLoader_pathWithEscapedSpace() throws Exception {
     URL url = new URL("file:///c:/Documents%20and%20Settings/");
     URLClassLoader classloader = new URLClassLoader(new URL[] {url}, null);
     assertThat(ClassPath.getClassPathEntries(classloader))
@@ -159,8 +149,7 @@ public class ClassPathTest extends TestCase {
   }
 
   // https://github.com/google/guava/issues/2152
-  @AndroidIncompatible // works in newer Android versions but fails at the version we test with
-  public void testToFile_AndroidIncompatible() throws Exception {
+  public void testToFile_androidIncompatible() throws Exception {
     assertThat(ClassPath.toFile(new URL("file:///c:\\Documents ~ Settings, or not\\11-12 12:05")))
         .isEqualTo(new File("/c:\\Documents ~ Settings, or not\\11-12 12:05"));
     assertThat(ClassPath.toFile(new URL("file:///C:\\Program Files\\Apache Software Foundation")))
@@ -202,7 +191,6 @@ public class ClassPathTest extends TestCase {
         .isEmpty();
   }
 
-  @AndroidIncompatible // ClassPath is documented as not supporting Android
 
   public void testScanFromFile_notJarFile() throws IOException {
     ClassLoader classLoader = ClassPathTest.class.getClassLoader();
@@ -215,6 +203,9 @@ public class ClassPathTest extends TestCase {
   }
 
   public void testGetClassPathEntry() throws MalformedURLException, URISyntaxException {
+    if (isWindows()) {
+      return; // TODO(b/136041958): We need to account for drive letters in the path.
+    }
     assertEquals(
         new File("/usr/test/dep.jar").toURI(),
         ClassPath.getClassPathEntry(new File("/home/build/outer.jar"), "file:/usr/test/dep.jar")
@@ -228,9 +219,8 @@ public class ClassPathTest extends TestCase {
     assertEquals(
         new File("/home/build/x/y/z.jar").toURI(),
         ClassPath.getClassPathEntry(new File("/home/build/outer.jar"), "x/y/z.jar").toURI());
-    assertEquals(
-        "/home/build/x y.jar",
-        ClassPath.getClassPathEntry(new File("/home/build/outer.jar"), "x y.jar").getFile());
+    assertThat(ClassPath.getClassPathEntry(new File("/home/build/outer.jar"), "x y.jar").getFile())
+        .isEqualTo("/home/build/x y.jar");
   }
 
   public void testGetClassPathFromManifest_nullManifest() {
@@ -285,6 +275,9 @@ public class ClassPathTest extends TestCase {
   }
 
   public void testGetClassPathFromManifest_absoluteDirectory() throws IOException {
+    if (isWindows()) {
+      return; // TODO(b/136041958): We need to account for drive letters in the path.
+    }
     File jarFile = new File("base/some.jar");
     Manifest manifest = manifestClasspath("file:/with/absolute/dir");
     assertThat(ClassPath.getClassPathFromManifest(jarFile, manifest))
@@ -292,6 +285,9 @@ public class ClassPathTest extends TestCase {
   }
 
   public void testGetClassPathFromManifest_absoluteJar() throws IOException {
+    if (isWindows()) {
+      return; // TODO(b/136041958): We need to account for drive letters in the path.
+    }
     File jarFile = new File("base/some.jar");
     Manifest manifest = manifestClasspath("file:/with/absolute.jar");
     assertThat(ClassPath.getClassPathFromManifest(jarFile, manifest))
@@ -299,6 +295,9 @@ public class ClassPathTest extends TestCase {
   }
 
   public void testGetClassPathFromManifest_multiplePaths() throws IOException {
+    if (isWindows()) {
+      return; // TODO(b/136041958): We need to account for drive letters in the path.
+    }
     File jarFile = new File("base/some.jar");
     Manifest manifest = manifestClasspath("file:/with/absolute.jar relative.jar  relative/dir");
     assertThat(ClassPath.getClassPathFromManifest(jarFile, manifest))
@@ -324,37 +323,78 @@ public class ClassPathTest extends TestCase {
   }
 
   public void testGetClassName() {
-    assertEquals("abc.d.Abc", ClassPath.getClassName("abc/d/Abc.class"));
+    assertThat(ClassPath.getClassName("abc/d/Abc.class")).isEqualTo("abc.d.Abc");
   }
 
   public void testResourceInfo_of() {
-    assertEquals(ClassInfo.class, resourceInfo(ClassPathTest.class).getClass());
-    assertEquals(ClassInfo.class, resourceInfo(ClassPath.class).getClass());
-    assertEquals(ClassInfo.class, resourceInfo(Nested.class).getClass());
+    assertThat(resourceInfo(ClassPathTest.class)).isInstanceOf(ClassInfo.class);
+    assertThat(resourceInfo(ClassPath.class)).isInstanceOf(ClassInfo.class);
+    assertThat(resourceInfo(Nested.class)).isInstanceOf(ClassInfo.class);
   }
 
   public void testGetSimpleName() {
     ClassLoader classLoader = getClass().getClassLoader();
-    assertEquals("Foo", new ClassInfo(FILE, "Foo.class", classLoader).getSimpleName());
-    assertEquals("Foo", new ClassInfo(FILE, "a/b/Foo.class", classLoader).getSimpleName());
-    assertEquals("Foo", new ClassInfo(FILE, "a/b/Bar$Foo.class", classLoader).getSimpleName());
-    assertEquals("", new ClassInfo(FILE, "a/b/Bar$1.class", classLoader).getSimpleName());
-    assertEquals("Foo", new ClassInfo(FILE, "a/b/Bar$Foo.class", classLoader).getSimpleName());
-    assertEquals("", new ClassInfo(FILE, "a/b/Bar$1.class", classLoader).getSimpleName());
-    assertEquals("Local", new ClassInfo(FILE, "a/b/Bar$1Local.class", classLoader).getSimpleName());
+    assertThat(new ClassInfo(FILE, "Foo.class", classLoader).getSimpleName()).isEqualTo("Foo");
+    assertThat(new ClassInfo(FILE, "a/b/Foo.class", classLoader).getSimpleName()).isEqualTo("Foo");
+    assertThat(new ClassInfo(FILE, "a/b/Bar$Foo.class", classLoader).getSimpleName())
+        .isEqualTo("Foo");
+    assertThat(new ClassInfo(FILE, "a/b/Bar$1.class", classLoader).getSimpleName()).isEqualTo("");
+    assertThat(new ClassInfo(FILE, "a/b/Bar$1Local.class", classLoader).getSimpleName())
+        .isEqualTo("Local");
+    assertThat(new ClassInfo(FILE, "a/b/$Foo.class", classLoader).getSimpleName())
+        .isEqualTo("$Foo");
+    assertThat(new ClassInfo(FILE, "a/b/$$Foo.class", classLoader).getSimpleName())
+        .isEqualTo("$$Foo");
+    assertThat(new ClassInfo(FILE, "a/b/Foo$.class", classLoader).getSimpleName())
+        .isEqualTo("Foo$");
+    assertThat(new ClassInfo(FILE, "a/b/Foo$$.class", classLoader).getSimpleName())
+        .isEqualTo("Foo$$");
+    assertThat(new ClassInfo(FILE, "a/b/$$Foo$$.class", classLoader).getSimpleName())
+        .isEqualTo("$$Foo$$");
+    assertThat(new ClassInfo(FILE, "a/b/Foo$$Bar.class", classLoader).getSimpleName())
+        .isEqualTo("Foo$$Bar");
+    assertThat(new ClassInfo(FILE, "a/b/Bar$Foo$.class", classLoader).getSimpleName())
+        .isEqualTo("Foo$");
+    assertThat(new ClassInfo(FILE, "a/b/Bar$Foo$$.class", classLoader).getSimpleName())
+        .isEqualTo("Foo$$");
+  }
+
+  public void testIsTopLevel() {
+    ClassLoader classLoader = getClass().getClassLoader();
+    assertThat(new ClassInfo(FILE, "Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$$Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$AutoValue_Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$$AutoValue_Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/Foo$.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/Foo$$.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$$Foo$$.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/Foo$$Bar.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/$$.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/$b/Foo.class", classLoader).isTopLevel()).isTrue();
+    assertThat(new ClassInfo(FILE, "a/b/Bar$Foo.class", classLoader).isTopLevel()).isFalse();
+    assertThat(new ClassInfo(FILE, "a/b/$Bar$Foo.class", classLoader).isTopLevel()).isFalse();
+    assertThat(new ClassInfo(FILE, "a/b/$$Bar$Foo.class", classLoader).isTopLevel()).isFalse();
+    assertThat(new ClassInfo(FILE, "a/b/Bar$1.class", classLoader).isTopLevel()).isFalse();
   }
 
   public void testGetPackageName() {
-    assertEquals(
-        "", new ClassInfo(FILE, "Foo.class", getClass().getClassLoader()).getPackageName());
-    assertEquals(
-        "a.b", new ClassInfo(FILE, "a/b/Foo.class", getClass().getClassLoader()).getPackageName());
+    assertThat(new ClassInfo(FILE, "Foo.class", getClass().getClassLoader()).getPackageName())
+        .isEqualTo("");
+    assertThat(new ClassInfo(FILE, "a/b/Foo.class", getClass().getClassLoader()).getPackageName())
+        .isEqualTo("a.b");
   }
 
   // Test that ResourceInfo.urls() returns identical content to ClassLoader.getResources()
 
 
+  @AndroidIncompatible
   public void testGetClassPathUrls() throws Exception {
+    if (isWindows()) {
+      return; // TODO(b/136041958): We need to account for drive letters in the path.
+    }
     String oldPathSeparator = PATH_SEPARATOR.value();
     String oldClassPath = JAVA_CLASS_PATH.value();
     System.setProperty(PATH_SEPARATOR.key(), ":");
@@ -386,10 +426,6 @@ public class ClassPathTest extends TestCase {
       System.setProperty(PATH_SEPARATOR.key(), oldPathSeparator);
       System.setProperty(JAVA_CLASS_PATH.key(), oldClassPath);
     }
-  }
-
-  private static boolean contentEquals(URL left, URL right) throws IOException {
-    return Resources.asByteSource(left).contentEquals(Resources.asByteSource(right));
   }
 
   private static class Nested {}
@@ -439,50 +475,6 @@ public class ClassPathTest extends TestCase {
         .contains("com/google/common/reflect/ClassPathTest.class");
   }
 
-
-  public void testExistsThrowsSecurityException() throws IOException, URISyntaxException {
-    SecurityManager oldSecurityManager = System.getSecurityManager();
-    try {
-      doTestExistsThrowsSecurityException();
-    } finally {
-      System.setSecurityManager(oldSecurityManager);
-    }
-  }
-
-  private void doTestExistsThrowsSecurityException() throws IOException, URISyntaxException {
-    File file = null;
-    // In Java 9, Logger may read the TZ database. Only disallow reading the class path URLs.
-    final PermissionCollection readClassPathFiles =
-        new FilePermission("", "read").newPermissionCollection();
-    for (URL url : ClassPath.parseJavaClassPath()) {
-      if (url.getProtocol().equalsIgnoreCase("file")) {
-        file = new File(url.toURI());
-        readClassPathFiles.add(new FilePermission(file.getAbsolutePath(), "read"));
-      }
-    }
-    assertThat(file).isNotNull();
-    SecurityManager disallowFilesSecurityManager =
-        new SecurityManager() {
-          @Override
-          public void checkPermission(Permission p) {
-            if (readClassPathFiles.implies(p)) {
-              throw new SecurityException("Disallowed: " + p);
-            }
-          }
-        };
-    System.setSecurityManager(disallowFilesSecurityManager);
-    try {
-      file.exists();
-      fail("Did not get expected SecurityException");
-    } catch (SecurityException expected) {
-    }
-    ClassPath classPath = ClassPath.from(getClass().getClassLoader());
-    // ClassPath may contain resources from the boot class loader; just not from the class path.
-    for (ResourceInfo resource : classPath.getResources()) {
-      assertThat(resource.getResourceName()).doesNotContain("com/google/common/reflect/");
-    }
-  }
-
   private static ClassPath.ClassInfo findClass(
       Iterable<ClassPath.ClassInfo> classes, Class<?> cls) {
     for (ClassPath.ClassInfo classInfo : classes) {
@@ -522,7 +514,7 @@ public class ClassPathTest extends TestCase {
     Closer closer = Closer.create();
     try {
       FileOutputStream fileOut = closer.register(new FileOutputStream(jarFile));
-      JarOutputStream jarOut = closer.register(new JarOutputStream(fileOut));
+      JarOutputStream jarOut = closer.register(new JarOutputStream(fileOut, manifest));
       for (String entry : entries) {
         jarOut.putNextEntry(new ZipEntry(entry));
         Resources.copy(ClassPathTest.class.getResource(entry), jarOut);
@@ -547,13 +539,17 @@ public class ClassPathTest extends TestCase {
   }
 
   private static URL makeJarUrlWithName(String name) throws IOException {
+    /*
+     * TODO(cpovirk): Use java.nio.file.Files.createTempDirectory instead of
+     * c.g.c.io.Files.createTempDir?
+     */
     File fullPath = new File(Files.createTempDir(), name);
     File jarFile = pickAnyJarFile();
     Files.copy(jarFile, fullPath);
     return fullPath.toURI().toURL();
   }
 
-  private static File pickAnyJarFile() throws IOException {
+  private static File pickAnyJarFile() {
     for (ClassPath.LocationInfo location :
         ClassPath.locationsFrom(ClassPathTest.class.getClassLoader())) {
       if (!location.file().isDirectory() && location.file().exists()) {
@@ -571,5 +567,9 @@ public class ClassPathTest extends TestCase {
       }
     }
     return builder.build();
+  }
+
+  private static boolean isWindows() {
+    return OS_NAME.value().startsWith("Windows");
   }
 }

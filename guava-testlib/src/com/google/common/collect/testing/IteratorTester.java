@@ -16,9 +16,12 @@
 
 package com.google.common.collect.testing;
 
+import static java.util.Collections.singleton;
+
 import com.google.common.annotations.GwtCompatible;
-import java.util.Collections;
 import java.util.Iterator;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A utility for testing an Iterator implementation by comparing its behavior to that of a "known
@@ -56,12 +59,10 @@ import java.util.Iterator;
  * <p>For example, to test {@link java.util.Collections#unmodifiableList(java.util.List)
  * Collections.unmodifiableList}'s iterator:
  *
- * <pre>{@code
- * List<String> expectedElements =
- *     Arrays.asList("a", "b", "c", "d", "e");
+ * {@snippet :
+ * List<String> expectedElements = Arrays.asList("a", "b", "c", "d", "e");
  * List<String> actualElements =
- *     Collections.unmodifiableList(
- *         Arrays.asList("a", "b", "c", "d", "e"));
+ *     Collections.unmodifiableList(Arrays.asList("a", "b", "c", "d", "e"));
  * IteratorTester<String> iteratorTester =
  *     new IteratorTester<String>(
  *         6,
@@ -75,7 +76,7 @@ import java.util.Iterator;
  *     };
  * iteratorTester.test();
  * iteratorTester.testForEachRemaining();
- * }</pre>
+ * }
  *
  * <p><b>Note</b>: It is necessary to use {@code IteratorTester.KnownOrder} as shown above, rather
  * than {@code KnownOrder} directly, because otherwise the code cannot be compiled.
@@ -84,7 +85,9 @@ import java.util.Iterator;
  * @author Chris Povirk
  */
 @GwtCompatible
-public abstract class IteratorTester<E> extends AbstractIteratorTester<E, Iterator<E>> {
+@NullMarked
+public abstract class IteratorTester<E extends @Nullable Object>
+    extends AbstractIteratorTester<E, Iterator<E>> {
   /**
    * Creates an IteratorTester.
    *
@@ -96,7 +99,7 @@ public abstract class IteratorTester<E> extends AbstractIteratorTester<E, Iterat
       Iterable<? extends IteratorFeature> features,
       Iterable<E> expectedElements,
       KnownOrder knownOrder) {
-    super(steps, Collections.<E>singleton(null), features, expectedElements, knownOrder, 0);
+    super(steps, singleton(null), features, expectedElements, knownOrder, 0);
   }
 
   @Override

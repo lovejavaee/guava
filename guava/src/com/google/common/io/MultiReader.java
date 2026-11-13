@@ -22,7 +22,7 @@ import com.google.common.base.Preconditions;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.Iterator;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link Reader} that concatenates multiple readers.
@@ -32,10 +32,9 @@ import javax.annotation.CheckForNull;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
-class MultiReader extends Reader {
+final class MultiReader extends Reader {
   private final Iterator<? extends CharSource> it;
-  @CheckForNull private Reader current;
+  private @Nullable Reader current;
 
   MultiReader(Iterator<? extends CharSource> readers) throws IOException {
     this.it = readers;
@@ -53,15 +52,14 @@ class MultiReader extends Reader {
   @Override
   public int read(char[] cbuf, int off, int len) throws IOException {
     checkNotNull(cbuf);
-    if (current == null) {
-      return -1;
-    }
-    int result = current.read(cbuf, off, len);
-    if (result == -1) {
+    while (current != null) {
+      int result = current.read(cbuf, off, len);
+      if (result != -1) {
+        return result;
+      }
       advance();
-      return read(cbuf, off, len);
     }
-    return result;
+    return -1;
   }
 
   @Override

@@ -14,6 +14,8 @@
 
 package com.google.common.util.concurrent;
 
+import static com.google.common.util.concurrent.MoreExecutors.newThread;
+import static com.google.common.util.concurrent.MoreExecutors.renamingDecorator;
 import static com.google.common.util.concurrent.Platform.restoreInterruptIfIsInterruptedException;
 
 import com.google.common.annotations.GwtIncompatible;
@@ -35,7 +37,6 @@ import java.util.concurrent.TimeoutException;
  */
 @GwtIncompatible
 @J2ktIncompatible
-@ElementTypesAreNonnullByDefault
 public abstract class AbstractIdleService implements Service {
 
   /* Thread names will look like {@code "MyService STARTING"}. */
@@ -55,33 +56,31 @@ public abstract class AbstractIdleService implements Service {
   @WeakOuter
   private final class DelegateService extends AbstractService {
     @Override
-    protected final void doStart() {
-      MoreExecutors.renamingDecorator(executor(), threadNameSupplier)
-          .execute(
-              () -> {
-                try {
-                  startUp();
-                  notifyStarted();
-                } catch (Throwable t) {
-                  restoreInterruptIfIsInterruptedException(t);
-                  notifyFailed(t);
-                }
-              });
+    protected void doStart() {
+      renamingDecorator(executor(), threadNameSupplier)
+          .execute(() -> {
+            try {
+              startUp();
+              notifyStarted();
+            } catch (Throwable t) {
+              restoreInterruptIfIsInterruptedException(t);
+              notifyFailed(t);
+            }
+          });
     }
 
     @Override
-    protected final void doStop() {
-      MoreExecutors.renamingDecorator(executor(), threadNameSupplier)
-          .execute(
-              () -> {
-                try {
-                  shutDown();
-                  notifyStopped();
-                } catch (Throwable t) {
-                  restoreInterruptIfIsInterruptedException(t);
-                  notifyFailed(t);
-                }
-              });
+    protected void doStop() {
+      renamingDecorator(executor(), threadNameSupplier)
+          .execute(() -> {
+            try {
+              shutDown();
+              notifyStopped();
+            } catch (Throwable t) {
+              restoreInterruptIfIsInterruptedException(t);
+              notifyFailed(t);
+            }
+          });
     }
 
     @Override
@@ -107,7 +106,7 @@ public abstract class AbstractIdleService implements Service {
    * stopped, and should return promptly.
    */
   protected Executor executor() {
-    return command -> MoreExecutors.newThread(threadNameSupplier.get(), command).start();
+    return command -> newThread(threadNameSupplier.get(), command).start();
   }
 
   @Override
@@ -125,19 +124,25 @@ public abstract class AbstractIdleService implements Service {
     return delegate.state();
   }
 
-  /** @since 13.0 */
+  /**
+   * @since 13.0
+   */
   @Override
   public final void addListener(Listener listener, Executor executor) {
     delegate.addListener(listener, executor);
   }
 
-  /** @since 14.0 */
+  /**
+   * @since 14.0
+   */
   @Override
   public final Throwable failureCause() {
     return delegate.failureCause();
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @CanIgnoreReturnValue
   @Override
   public final Service startAsync() {
@@ -145,7 +150,9 @@ public abstract class AbstractIdleService implements Service {
     return this;
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @CanIgnoreReturnValue
   @Override
   public final Service stopAsync() {
@@ -153,25 +160,33 @@ public abstract class AbstractIdleService implements Service {
     return this;
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @Override
   public final void awaitRunning() {
     delegate.awaitRunning();
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @Override
   public final void awaitRunning(long timeout, TimeUnit unit) throws TimeoutException {
     delegate.awaitRunning(timeout, unit);
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @Override
   public final void awaitTerminated() {
     delegate.awaitTerminated();
   }
 
-  /** @since 15.0 */
+  /**
+   * @since 15.0
+   */
   @Override
   public final void awaitTerminated(long timeout, TimeUnit unit) throws TimeoutException {
     delegate.awaitTerminated(timeout, unit);

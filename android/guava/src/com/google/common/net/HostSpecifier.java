@@ -20,7 +20,7 @@ import com.google.common.base.Preconditions;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.net.InetAddress;
 import java.text.ParseException;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A syntactically valid host specifier, suitable for use in a URI. This may be either a numeric IP
@@ -29,6 +29,13 @@ import javax.annotation.CheckForNull;
  * <p>Because this class is intended to represent host specifiers which can reasonably be used in a
  * URI, the domain name case is further restricted to include only those domain names which end in a
  * recognized public suffix; see {@link InternetDomainName#isPublicSuffix()} for details.
+ *
+ * <p>In this context, "URI" is used in the general sense, and {@code HostSpecifier} does not
+ * guarantee that every URI or URL parser will accept the original input without additional
+ * normalization. {@code HostSpecifier} follows the syntactic rules of {@link InetAddresses} and
+ * {@link InternetDomainName}, including their documented acceptance of some inputs that particular
+ * URI implementations may reject, such as non-ASCII digits, non-ASCII domain names, or domain
+ * labels containing underscores.
  *
  * <p>Note that no network lookups are performed by any {@code HostSpecifier} methods. No attempt is
  * made to verify that a provided specifier corresponds to a real or accessible host. Only syntactic
@@ -44,7 +51,6 @@ import javax.annotation.CheckForNull;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public final class HostSpecifier {
 
   private final String canonicalForm;
@@ -140,7 +146,7 @@ public final class HostSpecifier {
   }
 
   @Override
-  public boolean equals(@CheckForNull Object other) {
+  public boolean equals(@Nullable Object other) {
     if (this == other) {
       return true;
     }

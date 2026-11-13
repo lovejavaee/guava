@@ -16,16 +16,15 @@
 
 package com.google.common.collect;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ForwardingSortedMap.unsafeCompare;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.SortedSet;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A sorted set which forwards all its method calls to another sorted set. Subclasses should
@@ -55,7 +54,11 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
+/*
+ * We provide and encourage use of ForwardingNavigableSet over this class, but we still provide this
+ * one to preserve compatibility.
+ */
+@SuppressWarnings("JdkObsolete")
 public abstract class ForwardingSortedSet<E extends @Nullable Object> extends ForwardingSet<E>
     implements SortedSet<E> {
 
@@ -66,8 +69,7 @@ public abstract class ForwardingSortedSet<E extends @Nullable Object> extends Fo
   protected abstract SortedSet<E> delegate();
 
   @Override
-  @CheckForNull
-  public Comparator<? super E> comparator() {
+  public @Nullable Comparator<? super E> comparator() {
     return delegate().comparator();
   }
 
@@ -106,8 +108,7 @@ public abstract class ForwardingSortedSet<E extends @Nullable Object> extends Fo
    * @since 7.0
    */
   @Override
-  @Beta
-  protected boolean standardContains(@CheckForNull Object object) {
+  protected boolean standardContains(@Nullable Object object) {
     try {
       // any ClassCastExceptions and NullPointerExceptions are caught
       @SuppressWarnings({"unchecked", "nullness"})
@@ -127,8 +128,7 @@ public abstract class ForwardingSortedSet<E extends @Nullable Object> extends Fo
    * @since 7.0
    */
   @Override
-  @Beta
-  protected boolean standardRemove(@CheckForNull Object object) {
+  protected boolean standardRemove(@Nullable Object object) {
     try {
       // any ClassCastExceptions and NullPointerExceptions are caught
       @SuppressWarnings({"unchecked", "nullness"})
@@ -154,9 +154,30 @@ public abstract class ForwardingSortedSet<E extends @Nullable Object> extends Fo
    *
    * @since 7.0
    */
-  @Beta
   protected SortedSet<E> standardSubSet(
       @ParametricNullness E fromElement, @ParametricNullness E toElement) {
     return tailSet(fromElement).headSet(toElement);
+  }
+
+  /**
+   * A simplified version of {@link ForwardingSortedSet} where subclasses can pass in an already
+   * constructed {@link SortedSet} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingSortedSet<E extends @Nullable Object>
+      extends ForwardingSortedSet<E> {
+    private final SortedSet<E> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingSortedSet(SortedSet<E> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final SortedSet<E> delegate() {
+      return delegate;
+    }
   }
 }

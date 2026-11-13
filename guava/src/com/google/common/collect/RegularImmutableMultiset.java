@@ -15,17 +15,20 @@
 package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Hashing.closedTableSize;
+import static com.google.common.collect.Hashing.smearedHash;
+import static com.google.common.collect.ImmutableList.asImmutableList;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Objects;
 import com.google.common.collect.Multisets.ImmutableEntry;
 import com.google.common.primitives.Ints;
-import com.google.errorprone.annotations.concurrent.LazyInit;
 import java.util.Arrays;
 import java.util.Collection;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of {@link ImmutableMultiset} with zero or more elements.
@@ -33,10 +36,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Jared Levy
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true, serializable = true)
+@GwtCompatible
 @SuppressWarnings("serial") // uses writeReplace(), not default serialization
-@ElementTypesAreNonnullByDefault
-class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
+final class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   private static final ImmutableEntry<?>[] EMPTY_ARRAY = new ImmutableEntry<?>[0];
   static final ImmutableMultiset<Object> EMPTY = create(ImmutableList.<Entry<Object>>of());
 
@@ -45,13 +47,12 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
     @SuppressWarnings({"unchecked", "rawtypes"})
     ImmutableEntry<E>[] entryArray = new ImmutableEntry[distinct];
     if (distinct == 0) {
-      return new RegularImmutableMultiset<>(entryArray, EMPTY_ARRAY, 0, 0, ImmutableSet.of());
+      return new RegularImmutableMultiset<>(entryArray, EMPTY_ARRAY, 0, 0);
     }
-    int tableSize = Hashing.closedTableSize(distinct, MAX_LOAD_FACTOR);
+    int tableSize = closedTableSize(distinct, MAX_LOAD_FACTOR);
     int mask = tableSize - 1;
     @SuppressWarnings({"unchecked", "rawtypes"})
-    @Nullable
-    ImmutableEntry<E>[] hashTable = new @Nullable ImmutableEntry[tableSize];
+    @Nullable ImmutableEntry<E>[] hashTable = new @Nullable ImmutableEntry[tableSize];
 
     int index = 0;
     int hashCode = 0;
@@ -71,7 +72,7 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
         newEntry =
             canReuseEntry ? (ImmutableEntry<E>) entry : new ImmutableEntry<E>(element, count);
       } else {
-        newEntry = new NonTerminalEntry<E>(element, count, bucketHead);
+        newEntry = new NonTerminalEntry<>(element, count, bucketHead);
       }
       hashCode += hash ^ count;
       entryArray[index++] = newEntry;
@@ -80,9 +81,9 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
     }
 
     return hashFloodingDetected(hashTable)
-        ? JdkBackedImmutableMultiset.create(ImmutableList.asImmutableList(entryArray))
+        ? JdkBackedImmutableMultiset.create(asImmutableList(entryArray))
         : new RegularImmutableMultiset<E>(
-            entryArray, hashTable, Ints.saturatedCast(size), hashCode, null);
+            entryArray, hashTable, Ints.saturatedCast(size), hashCode);
   }
 
   private static boolean hashFloodingDetected(@Nullable ImmutableEntry<?>[] hashTable) {
@@ -122,19 +123,15 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   private final transient int size;
   private final transient int hashCode;
 
-  @LazyInit @CheckForNull private transient ImmutableSet<E> elementSet;
-
   private RegularImmutableMultiset(
       ImmutableEntry<E>[] entries,
       @Nullable ImmutableEntry<?>[] hashTable,
       int size,
-      int hashCode,
-      @CheckForNull ImmutableSet<E> elementSet) {
+      int hashCode) {
     this.entries = entries;
     this.hashTable = hashTable;
     this.size = size;
     this.hashCode = hashCode;
-    this.elementSet = elementSet;
   }
 
   private static final class NonTerminalEntry<E> extends ImmutableEntry<E> {
@@ -157,17 +154,17 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   }
 
   @Override
-  public int count(@CheckForNull Object element) {
+  public int count(@Nullable Object element) {
     @Nullable ImmutableEntry<?>[] hashTable = this.hashTable;
     if (element == null || hashTable.length == 0) {
       return 0;
     }
-    int hash = Hashing.smearedHash(element);
+    int hash = smearedHash(element);
     int mask = hashTable.length - 1;
     for (ImmutableEntry<?> entry = hashTable[hash & mask];
         entry != null;
         entry = entry.nextInBucket()) {
-      if (Objects.equal(element, entry.getElement())) {
+      if (Objects.equals(element, entry.getElement())) {
         return entry.getCount();
       }
     }
@@ -181,8 +178,7 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
 
   @Override
   public ImmutableSet<E> elementSet() {
-    ImmutableSet<E> result = elementSet;
-    return (result == null) ? elementSet = new ElementSet<E>(Arrays.asList(entries), this) : result;
+    return isEmpty() ? ImmutableSet.of() : new ElementSet<>(Arrays.asList(entries), this);
   }
 
   @Override
@@ -193,5 +189,14 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   @Override
   public int hashCode() {
     return hashCode;
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

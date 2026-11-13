@@ -14,16 +14,16 @@
 
 package com.google.common.reflect;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.reflect.Types.newParameterizedType;
+import static java.lang.System.arraycopy;
 
-import com.google.common.annotations.Beta;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.DoNotCall;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
@@ -32,8 +32,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Wrapper around either a {@link Method} or a {@link Constructor}. Convenience API is provided to
@@ -44,12 +43,12 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * will resolve the type parameters of the method or constructor in the context of the owner type,
  * which may be a subtype of the declaring class. For example:
  *
- * <pre>{@code
+ * {@snippet :
  * Method getMethod = List.class.getMethod("get", int.class);
  * Invokable<List<String>, ?> invokable = new TypeToken<List<String>>() {}.method(getMethod);
  * assertEquals(TypeToken.of(String.class), invokable.getReturnType()); // Not Object.class!
  * assertEquals(new TypeToken<List<String>>() {}, invokable.getOwnerType());
- * }</pre>
+ * }
  *
  * <p><b>Note:</b> earlier versions of this class inherited from {@link
  * java.lang.reflect.AccessibleObject AccessibleObject} and {@link
@@ -64,7 +63,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 14.0 (no longer implements {@link AccessibleObject} or {@code GenericDeclaration} since
  *     31.0)
  */
-@ElementTypesAreNonnullByDefault
 public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   private final AccessibleObject accessibleObject;
   private final Member member;
@@ -91,8 +89,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   }
 
   @Override
-  @CheckForNull
-  public final <A extends Annotation> A getAnnotation(Class<A> annotationClass) {
+  public final <A extends Annotation> @Nullable A getAnnotation(Class<A> annotationClass) {
     return accessibleObject.getAnnotation(annotationClass);
   }
 
@@ -119,13 +116,14 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   }
 
   /** See {@link java.lang.reflect.AccessibleObject#trySetAccessible()}. */
+  @SuppressWarnings("CatchingUnchecked") // sneaky checked exception
   public final boolean trySetAccessible() {
     // We can't call accessibleObject.trySetAccessible since that was added in Java 9 and this code
     // should work on Java 8. So we emulate it this way.
     try {
       accessibleObject.setAccessible(true);
       return true;
-    } catch (RuntimeException e) {
+    } catch (Exception e) { // sneaky checked exception
       return false;
     }
   }
@@ -212,7 +210,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   }
 
   @Override
-  public boolean equals(@CheckForNull Object obj) {
+  public final boolean equals(@Nullable Object obj) {
     if (obj instanceof Invokable) {
       Invokable<?, ?> that = (Invokable<?, ?>) obj;
       return getOwnerType().equals(that.getOwnerType()) && member.equals(that.member);
@@ -221,7 +219,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   }
 
   @Override
-  public int hashCode() {
+  public final int hashCode() {
     return member.hashCode();
   }
 
@@ -255,8 +253,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   // All subclasses are owned by us and we'll make sure to get the R type right, including nullness.
   @SuppressWarnings({"unchecked", "nullness"})
   @CanIgnoreReturnValue
-  @CheckForNull
-  public final R invoke(@CheckForNull T receiver, @Nullable Object... args)
+  public final @Nullable R invoke(@Nullable T receiver, @Nullable Object... args)
       throws InvocationTargetException, IllegalAccessException {
     return (R) invokeInternal(receiver, checkNotNull(args));
   }
@@ -278,7 +275,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
     Type[] parameterTypes = getGenericParameterTypes();
     Annotation[][] annotations = getParameterAnnotations();
     @Nullable Object[] annotatedTypes =
-        ANNOTATED_TYPE_EXISTS ? getAnnotatedParameterTypes() : new Object[parameterTypes.length];
+        new Object[parameterTypes.length];
     ImmutableList.Builder<Parameter> builder = ImmutableList.builder();
     for (int i = 0; i < parameterTypes.length; i++) {
       builder.add(
@@ -304,10 +301,10 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   /**
    * Explicitly specifies the return type of this {@code Invokable}. For example:
    *
-   * <pre>{@code
+   * {@snippet :
    * Method factoryMethod = Person.class.getMethod("create");
    * Invokable<?, Person> factory = Invokable.of(getNameMethod).returning(Person.class);
-   * }</pre>
+   * }
    */
   public final <R1 extends R> Invokable<T, R1> returning(Class<R1> returnType) {
     return returning(TypeToken.of(returnType));
@@ -315,10 +312,11 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
 
   /** Explicitly specifies the return type of this {@code Invokable}. */
   public final <R1 extends R> Invokable<T, R1> returning(TypeToken<R1> returnType) {
-    if (!returnType.isSupertypeOf(getReturnType())) {
-      throw new IllegalArgumentException(
-          "Invokable is known to return " + getReturnType() + ", not " + returnType);
-    }
+    checkArgument(
+        returnType.isSupertypeOf(getReturnType()),
+        "Invokable is known to return %s, not %s",
+        getReturnType(),
+        returnType);
     @SuppressWarnings("unchecked") // guarded by previous check
     Invokable<T, R1> specialized = (Invokable<T, R1>) this;
     return specialized;
@@ -337,15 +335,10 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
     return (TypeToken<T>) TypeToken.of(getDeclaringClass());
   }
 
-  @CheckForNull
-  abstract Object invokeInternal(@CheckForNull Object receiver, @Nullable Object[] args)
+  abstract @Nullable Object invokeInternal(@Nullable Object receiver, @Nullable Object[] args)
       throws InvocationTargetException, IllegalAccessException;
 
   abstract Type[] getGenericParameterTypes();
-
-  @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker"})
-  @IgnoreJRERequirement
-  abstract AnnotatedType[] getAnnotatedParameterTypes();
 
   /** This should never return a type that's not a subtype of Throwable. */
   abstract Type[] getGenericExceptionTypes();
@@ -353,22 +346,6 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
   abstract Annotation[][] getParameterAnnotations();
 
   abstract Type getGenericReturnType();
-
-  /**
-   * Returns the {@link AnnotatedType} for the return type.
-   *
-   * <p>This method will fail if run under an Android VM.
-   *
-   * @since NEXT for guava-android (available since 14.0 in guava-jre)
-   * @deprecated This method does not work under Android VMs. It is safe to use from guava-jre, but
-   *     this copy in guava-android is not safe to use.
-   */
-  @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker"})
-  @DoNotCall("fails under Android VMs; do not use from guava-android")
-  @Deprecated
-  @IgnoreJRERequirement
-  @Beta
-  public abstract AnnotatedType getAnnotatedReturnType();
 
   static class MethodInvokable<T> extends Invokable<T, Object> {
 
@@ -380,8 +357,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
     }
 
     @Override
-    @CheckForNull
-    final Object invokeInternal(@CheckForNull Object receiver, @Nullable Object[] args)
+    final @Nullable Object invokeInternal(@Nullable Object receiver, @Nullable Object[] args)
         throws InvocationTargetException, IllegalAccessException {
       return method.invoke(receiver, args);
     }
@@ -394,21 +370,6 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
     @Override
     Type[] getGenericParameterTypes() {
       return method.getGenericParameterTypes();
-    }
-
-    @Override
-    @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker"})
-    @IgnoreJRERequirement
-    AnnotatedType[] getAnnotatedParameterTypes() {
-      return method.getAnnotatedParameterTypes();
-    }
-
-    @Override
-    @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker", "DoNotCall"})
-    @DoNotCall
-    @IgnoreJRERequirement
-    public AnnotatedType getAnnotatedReturnType() {
-      return method.getAnnotatedReturnType();
     }
 
     @Override
@@ -450,7 +411,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
     }
 
     @Override
-    final Object invokeInternal(@CheckForNull Object receiver, @Nullable Object[] args)
+    final Object invokeInternal(@Nullable Object receiver, @Nullable Object[] args)
         throws InvocationTargetException, IllegalAccessException {
       try {
         return constructor.newInstance(args);
@@ -468,7 +429,7 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
       Class<?> declaringClass = getDeclaringClass();
       TypeVariable<?>[] typeParams = declaringClass.getTypeParameters();
       if (typeParams.length > 0) {
-        return Types.newParameterizedType(declaringClass, typeParams);
+        return newParameterizedType(declaringClass, typeParams);
       } else {
         return declaringClass;
       }
@@ -486,21 +447,6 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
         }
       }
       return types;
-    }
-
-    @Override
-    @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker"})
-    @IgnoreJRERequirement
-    AnnotatedType[] getAnnotatedParameterTypes() {
-      return constructor.getAnnotatedParameterTypes();
-    }
-
-    @Override
-    @SuppressWarnings({"Java7ApiChecker", "AndroidJdkLibsChecker", "DoNotCall"})
-    @DoNotCall
-    @IgnoreJRERequirement
-    public AnnotatedType getAnnotatedReturnType() {
-      return constructor.getAnnotatedReturnType();
     }
 
     @Override
@@ -528,8 +474,8 @@ public abstract class Invokable<T, R> implements AnnotatedElement, Member {
       TypeVariable<?>[] declaredByConstructor = constructor.getTypeParameters();
       TypeVariable<?>[] result =
           new TypeVariable<?>[declaredByClass.length + declaredByConstructor.length];
-      System.arraycopy(declaredByClass, 0, result, 0, declaredByClass.length);
-      System.arraycopy(
+      arraycopy(declaredByClass, 0, result, 0, declaredByClass.length);
+      arraycopy(
           declaredByConstructor, 0, result, declaredByClass.length, declaredByConstructor.length);
       return result;
     }

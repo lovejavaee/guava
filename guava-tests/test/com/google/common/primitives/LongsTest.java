@@ -16,80 +16,109 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.collect.testing.Helpers.misleadingSizeCollection;
+import static com.google.common.collect.testing.Helpers.testComparator;
+import static com.google.common.primitives.Longs.max;
+import static com.google.common.primitives.Longs.min;
+import static com.google.common.testing.SerializableTester.reserialize;
+import static com.google.common.testing.SerializableTester.reserializeAndAssert;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static java.lang.Long.MAX_VALUE;
 import static java.lang.Long.MIN_VALUE;
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Converter;
-import com.google.common.collect.testing.Helpers;
 import com.google.common.testing.NullPointerTester;
-import com.google.common.testing.SerializableTester;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Unit test for {@link Longs}.
  *
  * @author Kevin Bourrillion
  */
-@GwtCompatible(emulated = true)
-@SuppressWarnings("cast") // redundant casts are intentional and harmless
+@NullMarked
+@GwtCompatible
 public class LongsTest extends TestCase {
   private static final long[] EMPTY = {};
-  private static final long[] ARRAY1 = {(long) 1};
-  private static final long[] ARRAY234 = {(long) 2, (long) 3, (long) 4};
+  private static final long[] ARRAY1 = {1L};
+  private static final long[] ARRAY234 = {2L, 3L, 4L};
 
-  private static final long[] VALUES = {MIN_VALUE, (long) -1, (long) 0, (long) 1, MAX_VALUE};
+  private static final long[] VALUES = {MIN_VALUE, -1L, 0L, 1L, MAX_VALUE};
 
-  @GwtIncompatible // Long.hashCode returns different values in GWT.
+  // We need to test that our method behaves like the JDK method.
+  @SuppressWarnings("InlineMeInliner")
   public void testHashCode() {
     for (long value : VALUES) {
-      assertWithMessage("hashCode for " + value)
+      assertWithMessage("hashCode for %s", value)
           .that(Longs.hashCode(value))
-          .isEqualTo(((Long) value).hashCode());
+          .isEqualTo(Long.hashCode(value));
     }
   }
 
+  // We need to test that our method behaves like the JDK method.
+  @SuppressWarnings("InlineMeInliner")
   public void testCompare() {
     for (long x : VALUES) {
       for (long y : VALUES) {
         // note: spec requires only that the sign is the same
-        assertWithMessage(x + ", " + y)
-            .that(Longs.compare(x, y))
-            .isEqualTo(Long.valueOf(x).compareTo(y));
+        assertWithMessage("%s, %s", x, y).that(Longs.compare(x, y)).isEqualTo(Long.compare(x, y));
       }
     }
   }
 
   public void testContains() {
-    assertThat(Longs.contains(EMPTY, (long) 1)).isFalse();
-    assertThat(Longs.contains(ARRAY1, (long) 2)).isFalse();
-    assertThat(Longs.contains(ARRAY234, (long) 1)).isFalse();
-    assertThat(Longs.contains(new long[] {(long) -1}, (long) -1)).isTrue();
-    assertThat(Longs.contains(ARRAY234, (long) 2)).isTrue();
-    assertThat(Longs.contains(ARRAY234, (long) 3)).isTrue();
-    assertThat(Longs.contains(ARRAY234, (long) 4)).isTrue();
+    assertThat(Longs.contains(EMPTY, 1L)).isFalse();
+    assertThat(Longs.contains(ARRAY1, 2L)).isFalse();
+    assertThat(Longs.contains(ARRAY234, 1L)).isFalse();
+    assertThat(Longs.contains(new long[] {-1L}, -1L)).isTrue();
+    assertThat(Longs.contains(ARRAY234, 2L)).isTrue();
+    assertThat(Longs.contains(ARRAY234, 3L)).isTrue();
+    assertThat(Longs.contains(ARRAY234, 4L)).isTrue();
   }
 
   public void testIndexOf() {
-    assertThat(Longs.indexOf(EMPTY, (long) 1)).isEqualTo(-1);
-    assertThat(Longs.indexOf(ARRAY1, (long) 2)).isEqualTo(-1);
-    assertThat(Longs.indexOf(ARRAY234, (long) 1)).isEqualTo(-1);
-    assertThat(Longs.indexOf(new long[] {(long) -1}, (long) -1)).isEqualTo(0);
-    assertThat(Longs.indexOf(ARRAY234, (long) 2)).isEqualTo(0);
-    assertThat(Longs.indexOf(ARRAY234, (long) 3)).isEqualTo(1);
-    assertThat(Longs.indexOf(ARRAY234, (long) 4)).isEqualTo(2);
-    assertThat(Longs.indexOf(new long[] {(long) 2, (long) 3, (long) 2, (long) 3}, (long) 3))
-        .isEqualTo(1);
+    assertThat(Longs.indexOf(EMPTY, 1L)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY1, 2L)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, 1L)).isEqualTo(-1);
+    assertThat(Longs.indexOf(new long[] {-1L}, -1L)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, 2L)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, 3L)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, 4L)).isEqualTo(2);
+    assertThat(Longs.indexOf(new long[] {2L, 3L, 2L, 3L}, 3L)).isEqualTo(1);
+  }
+
+  public void testIndexOfIndexed() {
+    assertThat(Longs.indexOf(EMPTY, 1L, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY1, 2L, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, 1L, 0, 3)).isEqualTo(-1);
+    assertThat(Longs.indexOf(new long[] {-1L}, -1L, 0, 1)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, 2L, 0, 3)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, 2L, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, 2L, 1, 3)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, 3L, 1, 2)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, 3L, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, 4L, 2, 3)).isEqualTo(2);
+    assertThat(Longs.indexOf(ARRAY234, 4L, 0, 2)).isEqualTo(-1);
+    assertThat(Longs.indexOf(new long[] {2L, 3L, 2L, 3L}, 3L, 2, 4)).isEqualTo(3);
+    assertThat(Longs.indexOf(new long[] {3L, 3L, 3L, 3L}, 3L, 1, 3)).isEqualTo(1);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, 2L, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, 2L, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, 2L, 2, 1));
   }
 
   public void testIndexOf_arrayTarget() {
@@ -100,85 +129,123 @@ public class LongsTest extends TestCase {
     assertThat(Longs.indexOf(ARRAY1, ARRAY234)).isEqualTo(-1);
     assertThat(Longs.indexOf(ARRAY1, ARRAY1)).isEqualTo(0);
     assertThat(Longs.indexOf(ARRAY234, ARRAY234)).isEqualTo(0);
-    assertThat(Longs.indexOf(ARRAY234, new long[] {(long) 2, (long) 3})).isEqualTo(0);
-    assertThat(Longs.indexOf(ARRAY234, new long[] {(long) 3, (long) 4})).isEqualTo(1);
-    assertThat(Longs.indexOf(ARRAY234, new long[] {(long) 3})).isEqualTo(1);
-    assertThat(Longs.indexOf(ARRAY234, new long[] {(long) 4})).isEqualTo(2);
-    assertThat(
-            Longs.indexOf(
-                new long[] {(long) 2, (long) 3, (long) 3, (long) 3, (long) 3},
-                new long[] {(long) 3}))
+    assertThat(Longs.indexOf(ARRAY234, new long[] {2L, 3L})).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L, 4L})).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L})).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {4L})).isEqualTo(2);
+    assertThat(Longs.indexOf(new long[] {2L, 3L, 3L, 3L, 3L}, new long[] {3L})).isEqualTo(1);
+    assertThat(Longs.indexOf(new long[] {2L, 3L, 2L, 3L, 4L, 2L, 3L}, new long[] {2L, 3L, 4L}))
+        .isEqualTo(2);
+    assertThat(Longs.indexOf(new long[] {2L, 2L, 3L, 4L, 2L, 3L, 4L}, new long[] {2L, 3L, 4L}))
         .isEqualTo(1);
+    assertThat(Longs.indexOf(new long[] {4L, 3L, 2L}, new long[] {2L, 3L, 4L})).isEqualTo(-1);
+  }
+
+  public void testIndexOf_arrayTargetIndexed() {
+    assertThat(Longs.indexOf(EMPTY, EMPTY, 0, 0)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, EMPTY, 0, 3)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, EMPTY, 1, 3)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, EMPTY, 2, 2)).isEqualTo(2);
+    assertThat(Longs.indexOf(ARRAY234, EMPTY, 3, 3)).isEqualTo(3);
+    assertThat(Longs.indexOf(EMPTY, ARRAY234, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, ARRAY1, 0, 3)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY1, ARRAY234, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY1, ARRAY1, 0, 1)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY1, ARRAY1, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY1, ARRAY1, 1, 1)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, ARRAY234, 0, 3)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, ARRAY234, 0, 2)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, ARRAY234, 1, 3)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {2L, 3L}, 0, 3)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {2L, 3L}, 0, 2)).isEqualTo(0);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {2L, 3L}, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {2L, 3L}, 1, 3)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L, 4L}, 0, 3)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L, 4L}, 1, 3)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L, 4L}, 1, 2)).isEqualTo(-1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {3L}, 1, 2)).isEqualTo(1);
+    assertThat(Longs.indexOf(ARRAY234, new long[] {4L}, 2, 3)).isEqualTo(2);
+    assertThat(Longs.indexOf(new long[] {2L, 3L, 3L, 3L, 3L}, new long[] {3L}, 2, 5)).isEqualTo(2);
     assertThat(
-            Longs.indexOf(
-                new long[] {(long) 2, (long) 3, (long) 2, (long) 3, (long) 4, (long) 2, (long) 3},
-                new long[] {(long) 2, (long) 3, (long) 4}))
+            Longs.indexOf(new long[] {2L, 3L, 2L, 3L, 4L, 2L, 3L}, new long[] {2L, 3L, 4L}, 0, 7))
         .isEqualTo(2);
     assertThat(
-            Longs.indexOf(
-                new long[] {(long) 2, (long) 2, (long) 3, (long) 4, (long) 2, (long) 3, (long) 4},
-                new long[] {(long) 2, (long) 3, (long) 4}))
-        .isEqualTo(1);
+            Longs.indexOf(new long[] {2L, 3L, 2L, 3L, 4L, 2L, 3L}, new long[] {2L, 3L, 4L}, 2, 5))
+        .isEqualTo(2);
     assertThat(
-            Longs.indexOf(
-                new long[] {(long) 4, (long) 3, (long) 2},
-                new long[] {(long) 2, (long) 3, (long) 4}))
+            Longs.indexOf(new long[] {2L, 3L, 2L, 3L, 4L, 2L, 3L}, new long[] {2L, 3L, 4L}, 2, 4))
         .isEqualTo(-1);
+    assertThat(
+            Longs.indexOf(new long[] {2L, 2L, 3L, 4L, 2L, 3L, 4L}, new long[] {2L, 3L, 4L}, 2, 7))
+        .isEqualTo(4);
+    assertThat(Longs.indexOf(new long[] {4L, 3L, 2L}, new long[] {2L, 3L, 4L}, 0, 3)).isEqualTo(-1);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, ARRAY1, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, ARRAY1, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, ARRAY1, 2, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, EMPTY, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, EMPTY, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.indexOf(ARRAY234, EMPTY, 2, 1));
   }
 
   public void testLastIndexOf() {
-    assertThat(Longs.lastIndexOf(EMPTY, (long) 1)).isEqualTo(-1);
-    assertThat(Longs.lastIndexOf(ARRAY1, (long) 2)).isEqualTo(-1);
-    assertThat(Longs.lastIndexOf(ARRAY234, (long) 1)).isEqualTo(-1);
-    assertThat(Longs.lastIndexOf(new long[] {(long) -1}, (long) -1)).isEqualTo(0);
-    assertThat(Longs.lastIndexOf(ARRAY234, (long) 2)).isEqualTo(0);
-    assertThat(Longs.lastIndexOf(ARRAY234, (long) 3)).isEqualTo(1);
-    assertThat(Longs.lastIndexOf(ARRAY234, (long) 4)).isEqualTo(2);
-    assertThat(Longs.lastIndexOf(new long[] {(long) 2, (long) 3, (long) 2, (long) 3}, (long) 3))
-        .isEqualTo(3);
+    assertThat(Longs.lastIndexOf(EMPTY, 1L)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY1, 2L)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 1L)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(new long[] {-1L}, -1L)).isEqualTo(0);
+    assertThat(Longs.lastIndexOf(ARRAY234, 2L)).isEqualTo(0);
+    assertThat(Longs.lastIndexOf(ARRAY234, 3L)).isEqualTo(1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 4L)).isEqualTo(2);
+    assertThat(Longs.lastIndexOf(new long[] {2L, 3L, 2L, 3L}, 3L)).isEqualTo(3);
+  }
+
+  public void testLastIndexOfIndexed() {
+    assertThat(Longs.lastIndexOf(EMPTY, 1L, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY1, 2L, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 1L, 0, 3)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(new long[] {-1L}, -1L, 0, 1)).isEqualTo(0);
+    assertThat(Longs.lastIndexOf(ARRAY234, 2L, 0, 3)).isEqualTo(0);
+    assertThat(Longs.lastIndexOf(ARRAY234, 2L, 0, 0)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 2L, 1, 3)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 3L, 1, 2)).isEqualTo(1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 3L, 0, 1)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(ARRAY234, 4L, 2, 3)).isEqualTo(2);
+    assertThat(Longs.lastIndexOf(ARRAY234, 4L, 0, 2)).isEqualTo(-1);
+    assertThat(Longs.lastIndexOf(new long[] {2L, 3L, 2L, 3L}, 3L, 0, 3)).isEqualTo(1);
+    assertThat(Longs.lastIndexOf(new long[] {3L, 3L, 3L, 3L}, 3L, 1, 3)).isEqualTo(2);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.lastIndexOf(ARRAY234, 2L, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.lastIndexOf(ARRAY234, 2L, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Longs.lastIndexOf(ARRAY234, 2L, 2, 1));
   }
 
   public void testMax_noArgs() {
-    try {
-      Longs.max();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> max());
   }
 
   public void testMax() {
-    assertThat(Longs.max(MIN_VALUE)).isEqualTo(MIN_VALUE);
-    assertThat(Longs.max(MAX_VALUE)).isEqualTo(MAX_VALUE);
-    assertThat(Longs.max((long) 8, (long) 6, (long) 7, (long) 5, (long) 3, (long) 0, (long) 9))
-        .isEqualTo((long) 9);
+    assertThat(max(MIN_VALUE)).isEqualTo(MIN_VALUE);
+    assertThat(max(MAX_VALUE)).isEqualTo(MAX_VALUE);
+    assertThat(max(8L, 6L, 7L, 5L, 3L, 0L, 9L)).isEqualTo(9L);
   }
 
   public void testMin_noArgs() {
-    try {
-      Longs.min();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> min());
   }
 
   public void testMin() {
-    assertThat(Longs.min(MIN_VALUE)).isEqualTo(MIN_VALUE);
-    assertThat(Longs.min(MAX_VALUE)).isEqualTo(MAX_VALUE);
-    assertThat(Longs.min((long) 8, (long) 6, (long) 7, (long) 5, (long) 3, (long) 0, (long) 9))
-        .isEqualTo((long) 0);
+    assertThat(min(MIN_VALUE)).isEqualTo(MIN_VALUE);
+    assertThat(min(MAX_VALUE)).isEqualTo(MAX_VALUE);
+    assertThat(min(8L, 6L, 7L, 5L, 3L, 0L, 9L)).isEqualTo(0L);
   }
 
   public void testConstrainToRange() {
-    assertThat(Longs.constrainToRange((long) 1, (long) 0, (long) 5)).isEqualTo((long) 1);
-    assertThat(Longs.constrainToRange((long) 1, (long) 1, (long) 5)).isEqualTo((long) 1);
-    assertThat(Longs.constrainToRange((long) 1, (long) 3, (long) 5)).isEqualTo((long) 3);
-    assertThat(Longs.constrainToRange((long) 0, (long) -5, (long) -1)).isEqualTo((long) -1);
-    assertThat(Longs.constrainToRange((long) 5, (long) 2, (long) 2)).isEqualTo((long) 2);
-    try {
-      Longs.constrainToRange((long) 1, (long) 3, (long) 2);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThat(Longs.constrainToRange(1L, 0L, 5L)).isEqualTo(1L);
+    assertThat(Longs.constrainToRange(1L, 1L, 5L)).isEqualTo(1L);
+    assertThat(Longs.constrainToRange(1L, 3L, 5L)).isEqualTo(3L);
+    assertThat(Longs.constrainToRange(0L, -5L, -1L)).isEqualTo(-1L);
+    assertThat(Longs.constrainToRange(5L, 2L, 2L)).isEqualTo(2L);
+    assertThrows(IllegalArgumentException.class, () -> Longs.constrainToRange(1L, 3L, 2L));
   }
 
   public void testConcat() {
@@ -188,15 +255,40 @@ public class LongsTest extends TestCase {
     assertThat(Longs.concat(ARRAY1)).isEqualTo(ARRAY1);
     assertThat(Longs.concat(ARRAY1)).isNotSameInstanceAs(ARRAY1);
     assertThat(Longs.concat(EMPTY, ARRAY1, EMPTY)).isEqualTo(ARRAY1);
-    assertThat(Longs.concat(ARRAY1, ARRAY1, ARRAY1))
-        .isEqualTo(new long[] {(long) 1, (long) 1, (long) 1});
-    assertThat(Longs.concat(ARRAY1, ARRAY234))
-        .isEqualTo(new long[] {(long) 1, (long) 2, (long) 3, (long) 4});
+    assertThat(Longs.concat(ARRAY1, ARRAY1, ARRAY1)).isEqualTo(new long[] {1L, 1L, 1L});
+    assertThat(Longs.concat(ARRAY1, ARRAY234)).isEqualTo(new long[] {1L, 2L, 3L, 4L});
+  }
+
+  @GwtIncompatible // different overflow behavior; could probably be made to work by using ~~
+  public void testConcat_overflow_negative() {
+    int dim1 = 1 << 16;
+    int dim2 = 1 << 15;
+    assertThat(dim1 * dim2).isLessThan(0);
+    testConcatOverflow(dim1, dim2);
+  }
+
+  @GwtIncompatible // different overflow behavior; could probably be made to work by using ~~
+  public void testConcat_overflow_nonNegative() {
+    int dim1 = 1 << 16;
+    int dim2 = 1 << 16;
+    assertThat(dim1 * dim2).isAtLeast(0);
+    testConcatOverflow(dim1, dim2);
+  }
+
+  private static void testConcatOverflow(int arraysDim1, int arraysDim2) {
+    assertThat((long) arraysDim1 * arraysDim2).isNotEqualTo((long) (arraysDim1 * arraysDim2));
+
+    long[][] arrays = new long[arraysDim1][];
+    // it's shared to avoid using too much memory in tests
+    long[] sharedArray = new long[arraysDim2];
+    Arrays.fill(arrays, sharedArray);
+
+    assertThrows(IllegalArgumentException.class, () -> Longs.concat(arrays));
   }
 
   private static void assertByteArrayEquals(byte[] expected, byte[] actual) {
     assertWithMessage(
-            "Expected: " + Arrays.toString(expected) + ", but got: " + Arrays.toString(actual))
+            "Expected: %s, but got: %s", Arrays.toString(expected), Arrays.toString(actual))
         .that(Arrays.equals(expected, actual))
         .isTrue();
   }
@@ -227,11 +319,8 @@ public class LongsTest extends TestCase {
   }
 
   public void testFromByteArrayFails() {
-    try {
-      Longs.fromByteArray(new byte[Longs.BYTES - 1]);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class, () -> Longs.fromByteArray(new byte[Longs.BYTES - 1]));
   }
 
   public void testFromBytes() {
@@ -269,7 +358,7 @@ public class LongsTest extends TestCase {
 
       r.nextBytes(b);
       long value = Longs.fromByteArray(b);
-      assertWithMessage("" + value).that(Arrays.equals(b, Longs.toByteArray(value))).isTrue();
+      assertWithMessage("%s", value).that(Arrays.equals(b, Longs.toByteArray(value))).isTrue();
     }
   }
 
@@ -277,52 +366,43 @@ public class LongsTest extends TestCase {
     assertThat(Longs.ensureCapacity(EMPTY, 0, 1)).isSameInstanceAs(EMPTY);
     assertThat(Longs.ensureCapacity(ARRAY1, 0, 1)).isSameInstanceAs(ARRAY1);
     assertThat(Longs.ensureCapacity(ARRAY1, 1, 1)).isSameInstanceAs(ARRAY1);
-    assertThat(Longs.ensureCapacity(ARRAY1, 2, 1))
-        .isEqualTo(new long[] {(long) 1, (long) 0, (long) 0});
+    assertThat(Longs.ensureCapacity(ARRAY1, 2, 1)).isEqualTo(new long[] {1L, 0L, 0L});
   }
 
   public void testEnsureCapacity_fail() {
-    try {
-      Longs.ensureCapacity(ARRAY1, -1, 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
-    try {
-      // notice that this should even fail when no growth was needed
-      Longs.ensureCapacity(ARRAY1, 1, -1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> Longs.ensureCapacity(ARRAY1, -1, 1));
+    assertThrows(IllegalArgumentException.class, () -> Longs.ensureCapacity(ARRAY1, 1, -1));
   }
 
   public void testJoin() {
     assertThat(Longs.join(",", EMPTY)).isEmpty();
     assertThat(Longs.join(",", ARRAY1)).isEqualTo("1");
-    assertThat(Longs.join(",", (long) 1, (long) 2)).isEqualTo("1,2");
-    assertThat(Longs.join("", (long) 1, (long) 2, (long) 3)).isEqualTo("123");
+    assertThat(Longs.join(",", 1L, 2L)).isEqualTo("1,2");
+    assertThat(Longs.join("", 1L, 2L, 3L)).isEqualTo("123");
   }
 
   public void testLexicographicalComparator() {
     List<long[]> ordered =
-        Arrays.asList(
+        asList(
             new long[] {},
             new long[] {MIN_VALUE},
             new long[] {MIN_VALUE, MIN_VALUE},
-            new long[] {MIN_VALUE, (long) 1},
-            new long[] {(long) 1},
-            new long[] {(long) 1, MIN_VALUE},
-            new long[] {MAX_VALUE, MAX_VALUE - (long) 1},
+            new long[] {MIN_VALUE, 1L},
+            new long[] {1L},
+            new long[] {1L, MIN_VALUE},
+            new long[] {MAX_VALUE, MAX_VALUE - 1L},
             new long[] {MAX_VALUE, MAX_VALUE},
             new long[] {MAX_VALUE, MAX_VALUE, MAX_VALUE});
 
     Comparator<long[]> comparator = Longs.lexicographicalComparator();
-    Helpers.testComparator(comparator, ordered);
+    testComparator(comparator, ordered);
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // SerializableTester
   public void testLexicographicalComparatorSerializable() {
     Comparator<long[]> comparator = Longs.lexicographicalComparator();
-    assertThat(SerializableTester.reserialize(comparator)).isSameInstanceAs(comparator);
+    assertThat(reserialize(comparator)).isSameInstanceAs(comparator);
   }
 
   public void testReverse() {
@@ -367,17 +447,25 @@ public class LongsTest extends TestCase {
     assertThat(input).isEqualTo(expectedOutput);
   }
 
-  public void testRotate() {
-    testRotate(new long[] {}, -1, new long[] {});
-    testRotate(new long[] {}, 0, new long[] {});
-    testRotate(new long[] {}, 1, new long[] {});
+  public void testRotate_emptyArray() {
+    long[] empty = {};
+    long[] expected = {};
+    testRotate(empty, -1, expected);
+    testRotate(empty, 0, expected);
+    testRotate(empty, 1, expected);
+  }
 
-    testRotate(new long[] {1}, -2, new long[] {1});
-    testRotate(new long[] {1}, -1, new long[] {1});
-    testRotate(new long[] {1}, 0, new long[] {1});
-    testRotate(new long[] {1}, 1, new long[] {1});
-    testRotate(new long[] {1}, 2, new long[] {1});
+  public void testRotate_singleElementArray() {
+    long[] single = {1};
+    long[] expected = {1};
+    testRotate(single, -2, expected);
+    testRotate(single, -1, expected);
+    testRotate(single, 0, expected);
+    testRotate(single, 1, expected);
+    testRotate(single, 2, expected);
+  }
 
+  public void testRotate_multiElementArray() {
     testRotate(new long[] {1, 2}, -3, new long[] {2, 1});
     testRotate(new long[] {1, 2}, -1, new long[] {2, 1});
     testRotate(new long[] {1, 2}, -2, new long[] {1, 2});
@@ -417,13 +505,39 @@ public class LongsTest extends TestCase {
     testRotate(new long[] {1, 2, 3, 4, 5}, 6, new long[] {5, 1, 2, 3, 4});
   }
 
-  public void testRotateIndexed() {
-    testRotate(new long[] {}, 0, 0, 0, new long[] {});
+  public void testRotate_minValueDistance() {
+    testRotate(new long[] {1, 2, 3}, Integer.MIN_VALUE, new long[] {3, 1, 2});
+    testRotate(new long[] {0, 1, 2, 3, 4}, Integer.MIN_VALUE, 1, 4, new long[] {0, 3, 1, 2, 4});
+  }
 
-    testRotate(new long[] {1}, 0, 0, 1, new long[] {1});
-    testRotate(new long[] {1}, 1, 0, 1, new long[] {1});
-    testRotate(new long[] {1}, 1, 1, 1, new long[] {1});
+  public void testRotateIndexed_emptyRange() {
+    long[] empty = {};
+    long[] expectedEmpty = {};
+    testRotate(empty, 0, 0, 0, expectedEmpty);
 
+    long[] single = {1};
+    long[] expectedSingle = {1};
+    testRotate(single, 1, 1, 1, expectedSingle);
+
+    long[] array = {0, 1, 2};
+    long[] expectedArray = {0, 1, 2};
+    testRotate(array, 1, 1, 1, expectedArray);
+    testRotate(array, -1, 2, 2, expectedArray);
+  }
+
+  public void testRotateIndexed_singleElementRange() {
+    long[] single = {1};
+    long[] expectedSingle = {1};
+    testRotate(single, 0, 0, 1, expectedSingle);
+    testRotate(single, 1, 0, 1, expectedSingle);
+
+    long[] array = {0, 1, 2};
+    long[] expectedArray = {0, 1, 2};
+    testRotate(array, 1, 1, 2, expectedArray);
+    testRotate(array, -1, 2, 3, expectedArray);
+  }
+
+  public void testRotateIndexed_multiElementRange() {
     // Rotate the central 5 elements, leaving the ends as-is
     testRotate(new long[] {0, 1, 2, 3, 4, 5, 6}, -6, 1, 6, new long[] {0, 2, 3, 4, 5, 1, 6});
     testRotate(new long[] {0, 1, 2, 3, 4, 5, 6}, -1, 1, 6, new long[] {0, 2, 3, 4, 5, 1, 6});
@@ -481,22 +595,23 @@ public class LongsTest extends TestCase {
     testSortDescending(new long[] {-1, -2, 1, 2}, 1, 3, new long[] {-1, 1, -2, 2});
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // SerializableTester
   public void testStringConverterSerialization() {
-    SerializableTester.reserializeAndAssert(Longs.stringConverter());
+    reserializeAndAssert(Longs.stringConverter());
   }
 
   public void testToArray() {
     // need explicit type parameter to avoid javac warning!?
-    List<Long> none = Arrays.<Long>asList();
+    List<Long> none = Arrays.asList();
     assertThat(Longs.toArray(none)).isEqualTo(EMPTY);
 
-    List<Long> one = Arrays.asList((long) 1);
+    List<Long> one = asList(1L);
     assertThat(Longs.toArray(one)).isEqualTo(ARRAY1);
 
-    long[] array = {(long) 0, (long) 1, 0x0FF1C1AL};
+    long[] array = {0L, 1L, 0x0FF1C1AL};
 
-    List<Long> three = Arrays.asList((long) 0, (long) 1, 0x0FF1C1AL);
+    List<Long> three = asList(0L, 1L, 0x0FF1C1AL);
     assertThat(Longs.toArray(three)).isEqualTo(array);
 
     assertThat(Longs.toArray(Longs.asList(array))).isEqualTo(array);
@@ -506,7 +621,7 @@ public class LongsTest extends TestCase {
     for (int delta : new int[] {+1, 0, -1}) {
       for (int i = 0; i < VALUES.length; i++) {
         List<Long> list = Longs.asList(VALUES).subList(0, i);
-        Collection<Long> misleadingSize = Helpers.misleadingSizeCollection(delta);
+        Collection<Long> misleadingSize = misleadingSizeCollection(delta);
         misleadingSize.addAll(list);
         long[] arr = Longs.toArray(misleadingSize);
         assertThat(arr).hasLength(i);
@@ -517,24 +632,21 @@ public class LongsTest extends TestCase {
     }
   }
 
+  @SuppressWarnings("nullness") // test of a bogus call
   public void testToArray_withNull() {
-    List<Long> list = Arrays.asList((long) 0, (long) 1, null);
-    try {
-      Longs.toArray(list);
-      fail();
-    } catch (NullPointerException expected) {
-    }
+    List<@Nullable Long> list = asList(0L, 1L, null);
+    assertThrows(NullPointerException.class, () -> Longs.toArray(list));
   }
 
   public void testToArray_withConversion() {
-    long[] array = {(long) 0, (long) 1, (long) 2};
+    long[] array = {0L, 1L, 2L};
 
-    List<Byte> bytes = Arrays.asList((byte) 0, (byte) 1, (byte) 2);
-    List<Short> shorts = Arrays.asList((short) 0, (short) 1, (short) 2);
-    List<Integer> ints = Arrays.asList(0, 1, 2);
-    List<Float> floats = Arrays.asList((float) 0, (float) 1, (float) 2);
-    List<Long> longs = Arrays.asList((long) 0, (long) 1, (long) 2);
-    List<Double> doubles = Arrays.asList((double) 0, (double) 1, (double) 2);
+    List<Byte> bytes = asList((byte) 0, (byte) 1, (byte) 2);
+    List<Short> shorts = asList((short) 0, (short) 1, (short) 2);
+    List<Integer> ints = asList(0, 1, 2);
+    List<Float> floats = asList(0.0f, 1.0f, 2.0f);
+    List<Long> longs = asList(0L, 1L, 2L);
+    List<Double> doubles = asList(0.0, 1.0, 2.0);
 
     assertThat(Longs.toArray(bytes)).isEqualTo(array);
     assertThat(Longs.toArray(shorts)).isEqualTo(array);
@@ -544,39 +656,43 @@ public class LongsTest extends TestCase {
     assertThat(Longs.toArray(doubles)).isEqualTo(array);
   }
 
+  @J2ktIncompatible // b/239034072: Kotlin varargs copy parameter arrays.
   public void testAsList_isAView() {
-    long[] array = {(long) 0, (long) 1};
+    long[] array = {0L, 1L};
     List<Long> list = Longs.asList(array);
-    list.set(0, (long) 2);
-    assertThat(array).isEqualTo(new long[] {(long) 2, (long) 1});
-    array[1] = (long) 3;
-    assertThat(list).containsExactly((long) 2, (long) 3).inOrder();
+    list.set(0, 2L);
+    assertThat(array).isEqualTo(new long[] {2L, 1L});
+    array[1] = 3L;
+    assertThat(list).containsExactly(2L, 3L).inOrder();
   }
 
   public void testAsList_toArray_roundTrip() {
-    long[] array = {(long) 0, (long) 1, (long) 2};
+    long[] array = {0L, 1L, 2L};
     List<Long> list = Longs.asList(array);
     long[] newArray = Longs.toArray(list);
 
     // Make sure it returned a copy
-    list.set(0, (long) 4);
-    assertThat(newArray).isEqualTo(new long[] {(long) 0, (long) 1, (long) 2});
-    newArray[1] = (long) 5;
-    assertThat((long) list.get(1)).isEqualTo((long) 1);
+    list.set(0, 4L);
+    assertThat(newArray).isEqualTo(new long[] {0L, 1L, 2L});
+    newArray[1] = 5L;
+    assertThat((long) list.get(1)).isEqualTo(1L);
   }
 
   // This test stems from a real bug found by andrewk
   public void testAsList_subList_toArray_roundTrip() {
-    long[] array = {(long) 0, (long) 1, (long) 2, (long) 3};
+    long[] array = {0L, 1L, 2L, 3L};
     List<Long> list = Longs.asList(array);
-    assertThat(Longs.toArray(list.subList(1, 3))).isEqualTo(new long[] {(long) 1, (long) 2});
+    assertThat(Longs.toArray(list.subList(1, 3))).isEqualTo(new long[] {1L, 2L});
     assertThat(Longs.toArray(list.subList(2, 2))).isEqualTo(new long[] {});
   }
 
+  // `primitives` can't depend on `collect`, so this is what the prod code has to return.
+  @SuppressWarnings("EmptyList")
   public void testAsListEmpty() {
-    assertThat(Longs.asList(EMPTY)).isSameInstanceAs(Collections.emptyList());
+    assertThat(Longs.asList(EMPTY)).isSameInstanceAs(emptyList());
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(Longs.class);
@@ -584,22 +700,18 @@ public class LongsTest extends TestCase {
 
   public void testStringConverter_convert() {
     Converter<String, Long> converter = Longs.stringConverter();
-    assertThat(converter.convert("1")).isEqualTo((Long) 1L);
-    assertThat(converter.convert("0")).isEqualTo((Long) 0L);
-    assertThat(converter.convert("-1")).isEqualTo((Long) (-1L));
-    assertThat(converter.convert("0xff")).isEqualTo((Long) 255L);
-    assertThat(converter.convert("0xFF")).isEqualTo((Long) 255L);
-    assertThat(converter.convert("-0xFF")).isEqualTo((Long) (-255L));
-    assertThat(converter.convert("#0000FF")).isEqualTo((Long) 255L);
-    assertThat(converter.convert("0666")).isEqualTo((Long) 438L);
+    assertThat(converter.convert("1")).isEqualTo(1L);
+    assertThat(converter.convert("0")).isEqualTo(0L);
+    assertThat(converter.convert("-1")).isEqualTo(-1L);
+    assertThat(converter.convert("0xff")).isEqualTo(255L);
+    assertThat(converter.convert("0xFF")).isEqualTo(255L);
+    assertThat(converter.convert("-0xFF")).isEqualTo(-255L);
+    assertThat(converter.convert("#0000FF")).isEqualTo(255L);
+    assertThat(converter.convert("0666")).isEqualTo(438L);
   }
 
   public void testStringConverter_convertError() {
-    try {
-      Longs.stringConverter().convert("notanumber");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> Longs.stringConverter().convert("notanumber"));
   }
 
   public void testStringConverter_nullConversions() {
@@ -618,8 +730,9 @@ public class LongsTest extends TestCase {
     assertThat(converter.reverse().convert(0666L)).isEqualTo("438");
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
-  public void testStringConverter_nullPointerTester() throws Exception {
+  public void testStringConverter_nullPointerTester() {
     NullPointerTester tester = new NullPointerTester();
     tester.testAllPublicInstanceMethods(Longs.stringConverter());
   }
@@ -637,6 +750,9 @@ public class LongsTest extends TestCase {
     assertThat(Longs.tryParse("-")).isNull();
     assertThat(Longs.tryParse("+1")).isNull();
     assertThat(Longs.tryParse("999999999999999999999999")).isNull();
+    assertThat(Longs.tryParse(" ")).isNull();
+    assertThat(Longs.tryParse("1 ")).isNull();
+    assertThat(Longs.tryParse(" 1")).isNull();
     assertWithMessage("Max long + 1")
         .that(Longs.tryParse(BigInteger.valueOf(MAX_VALUE).add(BigInteger.ONE).toString()))
         .isNull();
@@ -662,27 +778,25 @@ public class LongsTest extends TestCase {
 
   public void testTryParse_radix() {
     for (int radix = Character.MIN_RADIX; radix <= Character.MAX_RADIX; radix++) {
-      radixEncodeParseAndAssertEquals((long) 0, radix);
-      radixEncodeParseAndAssertEquals((long) 8000, radix);
-      radixEncodeParseAndAssertEquals((long) -8000, radix);
+      radixEncodeParseAndAssertEquals(0L, radix);
+      radixEncodeParseAndAssertEquals(8000L, radix);
+      radixEncodeParseAndAssertEquals(-8000L, radix);
       radixEncodeParseAndAssertEquals(MAX_VALUE, radix);
       radixEncodeParseAndAssertEquals(MIN_VALUE, radix);
-      assertWithMessage("Radix: " + radix)
+      assertWithMessage("Radix: %s", radix)
           .that(Longs.tryParse("999999999999999999999999", radix))
           .isNull();
-      assertWithMessage("Radix: " + radix)
+      assertWithMessage("Radix: %s", radix)
           .that(Longs.tryParse(BigInteger.valueOf(MAX_VALUE).add(BigInteger.ONE).toString(), radix))
           .isNull();
-      assertWithMessage("Radix: " + radix)
+      assertWithMessage("Radix: %s", radix)
           .that(
               Longs.tryParse(
                   BigInteger.valueOf(MIN_VALUE).subtract(BigInteger.ONE).toString(), radix))
           .isNull();
     }
     assertWithMessage("Hex string and dec parm").that(Longs.tryParse("FFFF", 10)).isNull();
-    assertWithMessage("Mixed hex case")
-        .that(Longs.tryParse("ffFF", 16).longValue())
-        .isEqualTo(65535);
+    assertWithMessage("Mixed hex case").that(Longs.tryParse("ffFF", 16)).isEqualTo(65535);
   }
 
   /**
@@ -690,33 +804,24 @@ public class LongsTest extends TestCase {
    * parse the result. Asserts the result is the same as what we started with.
    */
   private static void radixEncodeParseAndAssertEquals(Long value, int radix) {
-    assertWithMessage("Radix: " + radix)
+    assertWithMessage("Radix: %s", radix)
         .that(Longs.tryParse(Long.toString(value, radix), radix))
         .isEqualTo(value);
   }
 
   public void testTryParse_radixTooBig() {
-    try {
-      Longs.tryParse("0", Character.MAX_RADIX + 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class, () -> Longs.tryParse("0", Character.MAX_RADIX + 1));
   }
 
   public void testTryParse_radixTooSmall() {
-    try {
-      Longs.tryParse("0", Character.MIN_RADIX - 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class, () -> Longs.tryParse("0", Character.MIN_RADIX - 1));
   }
 
+  @SuppressWarnings("nullness") // test of a bogus call
   public void testTryParse_withNullGwt() {
     assertThat(Longs.tryParse("null")).isNull();
-    try {
-      Longs.tryParse(null);
-      fail("Expected NPE");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> Longs.tryParse(null));
   }
 }

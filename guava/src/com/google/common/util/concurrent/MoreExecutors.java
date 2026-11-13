@@ -16,24 +16,27 @@ package com.google.common.util.concurrent;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayListWithCapacity;
+import static com.google.common.util.concurrent.Callables.threadRenaming;
 import static com.google.common.util.concurrent.Internal.toNanosSaturated;
+import static com.google.common.util.concurrent.SneakyThrows.sneakyThrow;
+import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.Executors.defaultThreadFactory;
+import static java.util.concurrent.Executors.unconfigurableExecutorService;
+import static java.util.concurrent.Executors.unconfigurableScheduledExecutorService;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
-import com.google.common.base.Throwables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.ForwardingListenableFuture.SimpleForwardingListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.concurrent.GuardedBy;
 import java.lang.reflect.InvocationTargetException;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -44,27 +47,28 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Factory and utility methods for {@link java.util.concurrent.Executor}, {@link ExecutorService},
- * and {@link java.util.concurrent.ThreadFactory}.
+ * Factory and utility methods for {@link Executor}, {@link ExecutorService}, and {@link
+ * ThreadFactory}.
  *
  * @author Eric Fellheimer
  * @author Kyle Littlefield
  * @author Justin Mahoney
  * @since 3.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class MoreExecutors {
   private MoreExecutors() {}
 
@@ -79,15 +83,13 @@ public final class MoreExecutors {
    * @param terminationTimeout how long to wait for the executor to finish before terminating the
    *     JVM
    * @return an unmodifiable version of the input which will not hang the JVM
-   * @since 28.0
+   * @since 28.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // TODO
   public static ExecutorService getExitingExecutorService(
       ThreadPoolExecutor executor, Duration terminationTimeout) {
-    return getExitingExecutorService(
-        executor, toNanosSaturated(terminationTimeout), TimeUnit.NANOSECONDS);
+    return getExitingExecutorService(executor, toNanosSaturated(terminationTimeout), NANOSECONDS);
   }
 
   /**
@@ -103,7 +105,6 @@ public final class MoreExecutors {
    * @param timeUnit unit of time for the time parameter
    * @return an unmodifiable version of the input which will not hang the JVM
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // TODO
   @SuppressWarnings("GoodTime") // should accept a java.time.Duration
@@ -125,7 +126,6 @@ public final class MoreExecutors {
    * @param executor the executor to modify to make sure it exits when the application is finished
    * @return an unmodifiable version of the input which will not hang the JVM
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // concurrency
   public static ExecutorService getExitingExecutorService(ThreadPoolExecutor executor) {
@@ -143,15 +143,14 @@ public final class MoreExecutors {
    * @param terminationTimeout how long to wait for the executor to finish before terminating the
    *     JVM
    * @return an unmodifiable version of the input which will not hang the JVM
-   * @since 28.0
+   * @since 28.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // java.time.Duration
   public static ScheduledExecutorService getExitingScheduledExecutorService(
       ScheduledThreadPoolExecutor executor, Duration terminationTimeout) {
     return getExitingScheduledExecutorService(
-        executor, toNanosSaturated(terminationTimeout), TimeUnit.NANOSECONDS);
+        executor, toNanosSaturated(terminationTimeout), NANOSECONDS);
   }
 
   /**
@@ -167,7 +166,6 @@ public final class MoreExecutors {
    * @param timeUnit unit of time for the time parameter
    * @return an unmodifiable version of the input which will not hang the JVM
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // TODO
   @SuppressWarnings("GoodTime") // should accept a java.time.Duration
@@ -190,7 +188,6 @@ public final class MoreExecutors {
    * @param executor the executor to modify to make sure it exits when the application is finished
    * @return an unmodifiable version of the input which will not hang the JVM
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // TODO
   public static ScheduledExecutorService getExitingScheduledExecutorService(
@@ -207,13 +204,12 @@ public final class MoreExecutors {
    * @param service ExecutorService which uses daemon threads
    * @param terminationTimeout how long to wait for the executor to finish before terminating the
    *     JVM
-   * @since 28.0
+   * @since 28.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // java.time.Duration
   public static void addDelayedShutdownHook(ExecutorService service, Duration terminationTimeout) {
-    addDelayedShutdownHook(service, toNanosSaturated(terminationTimeout), TimeUnit.NANOSECONDS);
+    addDelayedShutdownHook(service, toNanosSaturated(terminationTimeout), NANOSECONDS);
   }
 
   /**
@@ -227,7 +223,6 @@ public final class MoreExecutors {
    *     JVM
    * @param timeUnit unit of time for the time parameter
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // TODO
   @SuppressWarnings("GoodTime") // should accept a java.time.Duration
@@ -245,49 +240,46 @@ public final class MoreExecutors {
     final ExecutorService getExitingExecutorService(
         ThreadPoolExecutor executor, long terminationTimeout, TimeUnit timeUnit) {
       useDaemonThreadFactory(executor);
-      ExecutorService service = Executors.unconfigurableExecutorService(executor);
+      ExecutorService service = unconfigurableExecutorService(executor);
       addDelayedShutdownHook(executor, terminationTimeout, timeUnit);
       return service;
     }
 
     final ExecutorService getExitingExecutorService(ThreadPoolExecutor executor) {
-      return getExitingExecutorService(executor, 120, TimeUnit.SECONDS);
+      return getExitingExecutorService(executor, 120, SECONDS);
     }
 
     final ScheduledExecutorService getExitingScheduledExecutorService(
         ScheduledThreadPoolExecutor executor, long terminationTimeout, TimeUnit timeUnit) {
       useDaemonThreadFactory(executor);
-      ScheduledExecutorService service = Executors.unconfigurableScheduledExecutorService(executor);
+      ScheduledExecutorService service = unconfigurableScheduledExecutorService(executor);
       addDelayedShutdownHook(executor, terminationTimeout, timeUnit);
       return service;
     }
 
     final ScheduledExecutorService getExitingScheduledExecutorService(
         ScheduledThreadPoolExecutor executor) {
-      return getExitingScheduledExecutorService(executor, 120, TimeUnit.SECONDS);
+      return getExitingScheduledExecutorService(executor, 120, SECONDS);
     }
 
     final void addDelayedShutdownHook(
-        final ExecutorService service, final long terminationTimeout, final TimeUnit timeUnit) {
+        ExecutorService service, long terminationTimeout, TimeUnit timeUnit) {
       checkNotNull(service);
       checkNotNull(timeUnit);
       addShutdownHook(
-          MoreExecutors.newThread(
+          newThread(
               "DelayedShutdownHook-for-" + service,
-              new Runnable() {
-                @Override
-                public void run() {
-                  try {
-                    // We'd like to log progress and failures that may arise in the
-                    // following code, but unfortunately the behavior of logging
-                    // is undefined in shutdown hooks.
-                    // This is because the logging code installs a shutdown hook of its
-                    // own. See Cleaner class inside {@link LogManager}.
-                    service.shutdown();
-                    service.awaitTermination(terminationTimeout, timeUnit);
-                  } catch (InterruptedException ignored) {
-                    // We're shutting down anyway, so just ignore.
-                  }
+              () -> {
+                service.shutdown();
+                try {
+                  // We'd like to log progress and failures that may arise in the
+                  // following code, but unfortunately the behavior of logging
+                  // is undefined in shutdown hooks.
+                  // This is because the logging code installs a shutdown hook of its
+                  // own. See Cleaner class inside {@link LogManager}.
+                  service.awaitTermination(terminationTimeout, timeUnit);
+                } catch (InterruptedException ignored) {
+                  // We're shutting down anyway, so just ignore.
                 }
               }));
     }
@@ -296,6 +288,8 @@ public final class MoreExecutors {
     void addShutdownHook(Thread hook) {
       Runtime.getRuntime().addShutdownHook(hook);
     }
+
+    Application() {}
   }
 
   @J2ktIncompatible
@@ -308,117 +302,12 @@ public final class MoreExecutors {
             .build());
   }
 
-  // See newDirectExecutorService javadoc for behavioral notes.
-  @J2ktIncompatible
-  @GwtIncompatible // TODO
-  private static final class DirectExecutorService extends AbstractListeningExecutorService {
-    /** Lock used whenever accessing the state variables (runningTasks, shutdown) of the executor */
-    private final Object lock = new Object();
-
-    /*
-     * Conceptually, these two variables describe the executor being in
-     * one of three states:
-     *   - Active: shutdown == false
-     *   - Shutdown: runningTasks > 0 and shutdown == true
-     *   - Terminated: runningTasks == 0 and shutdown == true
-     */
-    @GuardedBy("lock")
-    private int runningTasks = 0;
-
-    @GuardedBy("lock")
-    private boolean shutdown = false;
-
-    @Override
-    public void execute(Runnable command) {
-      startTask();
-      try {
-        command.run();
-      } finally {
-        endTask();
-      }
-    }
-
-    @Override
-    public boolean isShutdown() {
-      synchronized (lock) {
-        return shutdown;
-      }
-    }
-
-    @Override
-    public void shutdown() {
-      synchronized (lock) {
-        shutdown = true;
-        if (runningTasks == 0) {
-          lock.notifyAll();
-        }
-      }
-    }
-
-    // See newDirectExecutorService javadoc for unusual behavior of this method.
-    @Override
-    public List<Runnable> shutdownNow() {
-      shutdown();
-      return Collections.emptyList();
-    }
-
-    @Override
-    public boolean isTerminated() {
-      synchronized (lock) {
-        return shutdown && runningTasks == 0;
-      }
-    }
-
-    @Override
-    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-      long nanos = unit.toNanos(timeout);
-      synchronized (lock) {
-        while (true) {
-          if (shutdown && runningTasks == 0) {
-            return true;
-          } else if (nanos <= 0) {
-            return false;
-          } else {
-            long now = System.nanoTime();
-            TimeUnit.NANOSECONDS.timedWait(lock, nanos);
-            nanos -= System.nanoTime() - now; // subtract the actual time we waited
-          }
-        }
-      }
-    }
-
-    /**
-     * Checks if the executor has been shut down and increments the running task count.
-     *
-     * @throws RejectedExecutionException if the executor has been previously shutdown
-     */
-    private void startTask() {
-      synchronized (lock) {
-        if (shutdown) {
-          throw new RejectedExecutionException("Executor already shutdown");
-        }
-        runningTasks++;
-      }
-    }
-
-    /** Decrements the running task count. */
-    private void endTask() {
-      synchronized (lock) {
-        int numRunning = --runningTasks;
-        if (numRunning == 0) {
-          lock.notifyAll();
-        }
-      }
-    }
-  }
-
   /**
    * Creates an executor service that runs each task in the thread that invokes {@code
-   * execute/submit}, as in {@code ThreadPoolExecutor.CallerRunsPolicy}. This applies both to
-   * individually submitted tasks and to collections of tasks submitted via {@code invokeAll} or
-   * {@code invokeAny}. In the latter case, tasks will run serially on the calling thread. Tasks are
-   * run to completion before a {@code Future} is returned to the caller (unless the executor has
-   * been shutdown).
+   * execute/submit}, as in {@link CallerRunsPolicy} This applies both to individually submitted
+   * tasks and to collections of tasks submitted via {@code invokeAll} or {@code invokeAny}. In the
+   * latter case, tasks will run serially on the calling thread. Tasks are run to completion before
+   * a {@code Future} is returned to the caller (unless the executor has been shutdown).
    *
    * <p>Although all tasks are immediately executed in the thread that submitted the task, this
    * {@code ExecutorService} imposes a small locking overhead on each task submission in order to
@@ -438,7 +327,6 @@ public final class MoreExecutors {
    *
    * @since 18.0 (present as MoreExecutors.sameThreadExecutor() since 10.0)
    */
-  @J2ktIncompatible
   @GwtIncompatible // TODO
   public static ListeningExecutorService newDirectExecutorService() {
     return new DirectExecutorService();
@@ -446,7 +334,7 @@ public final class MoreExecutors {
 
   /**
    * Returns an {@link Executor} that runs each task in the thread that invokes {@link
-   * Executor#execute execute}, as in {@code ThreadPoolExecutor.CallerRunsPolicy}.
+   * Executor#execute execute}, as in {@link CallerRunsPolicy}.
    *
    * <p>This executor is appropriate for tasks that are lightweight and not deeply chained.
    * Inappropriate {@code directExecutor} usage can cause problems, and these problems can be
@@ -492,13 +380,13 @@ public final class MoreExecutors {
    *
    * <p>This instance is equivalent to:
    *
-   * <pre>{@code
+   * {@snippet :
    * final class DirectExecutor implements Executor {
    *   public void execute(Runnable r) {
    *     r.run();
    *   }
    * }
-   * }</pre>
+   * }
    *
    * <p>This should be preferred to {@link #newDirectExecutorService()} because implementing the
    * {@link ExecutorService} subinterface necessitates significant performance overhead.
@@ -515,7 +403,7 @@ public final class MoreExecutors {
    *
    * <p>{@linkplain Executor#execute executed} tasks have a happens-before order as defined in the
    * Java Language Specification. Tasks execute with the same happens-before order that the function
-   * calls to {@link Executor#execute `execute()`} that submitted those tasks had.
+   * calls to {@link Executor#execute execute()} that submitted those tasks had.
    *
    * <p>The executor uses {@code delegate} in order to {@link Executor#execute execute} each task in
    * turn, and does not create any threads of its own.
@@ -553,7 +441,6 @@ public final class MoreExecutors {
    *
    * @since 23.3 (since 23.1 as {@code sequentialExecutor})
    */
-  @J2ktIncompatible
   @GwtIncompatible
   public static Executor newSequentialExecutor(Executor delegate) {
     return new SequentialExecutor(delegate);
@@ -574,7 +461,6 @@ public final class MoreExecutors {
    *
    * @since 10.0
    */
-  @J2ktIncompatible
   @GwtIncompatible // TODO
   public static ListeningExecutorService listeningDecorator(ExecutorService delegate) {
     return (delegate instanceof ListeningExecutorService)
@@ -600,7 +486,6 @@ public final class MoreExecutors {
    *
    * @since 10.0
    */
-  @J2ktIncompatible
   @GwtIncompatible // TODO
   public static ListeningScheduledExecutorService listeningDecorator(
       ScheduledExecutorService delegate) {
@@ -609,7 +494,6 @@ public final class MoreExecutors {
         : new ScheduledListeningDecorator(delegate);
   }
 
-  @J2ktIncompatible
   @GwtIncompatible // TODO
   private static class ListeningDecorator extends AbstractListeningExecutorService {
     private final ExecutorService delegate;
@@ -643,6 +527,12 @@ public final class MoreExecutors {
       return delegate.shutdownNow();
     }
 
+    /*
+     * TODO(user): In addition to overriding `execute`, also
+     * override the `Future`-returning methods of `ExecutorService` to propagate cancellation from
+     * our `TrustedListenableFutureTask` to a `Future` returned by the delegate executor?
+     */
+
     @Override
     public final void execute(Runnable command) {
       delegate.execute(command);
@@ -654,7 +544,6 @@ public final class MoreExecutors {
     }
   }
 
-  @J2ktIncompatible
   @GwtIncompatible // TODO
   private static final class ScheduledListeningDecorator extends ListeningDecorator
       implements ListeningScheduledExecutorService {
@@ -679,7 +568,7 @@ public final class MoreExecutors {
         Callable<V> callable, long delay, TimeUnit unit) {
       TrustedListenableFutureTask<V> task = TrustedListenableFutureTask.create(callable);
       ScheduledFuture<?> scheduled = delegate.schedule(task, delay, unit);
-      return new ListenableScheduledTask<V>(task, scheduled);
+      return new ListenableScheduledTask<>(task, scheduled);
     }
 
     @Override
@@ -704,7 +593,7 @@ public final class MoreExecutors {
 
       private final ScheduledFuture<?> scheduledDelegate;
 
-      public ListenableScheduledTask(
+      ListenableScheduledTask(
           ListenableFuture<V> listenableDelegate, ScheduledFuture<?> scheduledDelegate) {
         super(listenableDelegate);
         this.scheduledDelegate = scheduledDelegate;
@@ -717,7 +606,12 @@ public final class MoreExecutors {
           // Unless it is cancelled, the delegate may continue being scheduled
           scheduledDelegate.cancel(mayInterruptIfRunning);
 
-          // TODO(user): Cancel "this" if "scheduledDelegate" is cancelled.
+          /*
+           * We'd love to also arrange for the inverse -- that is, to also automatically cancel this
+           * future if scheduledDelegate is cancelled (as happens after the delegate executor is
+           * shut down: https://github.com/google/guava/issues/3553). But it seems unlikely that
+           * that's possible to detect in general.
+           */
         }
         return cancelled;
       }
@@ -733,13 +627,11 @@ public final class MoreExecutors {
       }
     }
 
-    @J2ktIncompatible
-    @GwtIncompatible // TODO
     private static final class NeverSuccessfulListenableFutureTask
         extends AbstractFuture.TrustedFuture<@Nullable Void> implements Runnable {
       private final Runnable delegate;
 
-      public NeverSuccessfulListenableFutureTask(Runnable delegate) {
+      NeverSuccessfulListenableFutureTask(Runnable delegate) {
         this.delegate = checkNotNull(delegate);
       }
 
@@ -747,8 +639,26 @@ public final class MoreExecutors {
       public void run() {
         try {
           delegate.run();
-        } catch (RuntimeException | Error t) {
+        } catch (Throwable t) {
+          // Any Exception is either a RuntimeException or sneaky checked exception.
+
+          /*
+           * We fail this `ListenableFuture`, whose result is exposed to the user through the
+           * `ListenableScheduledTask` we return from the `schedule*` methods.
+           */
           setException(t);
+
+          /*
+           * We fail the current run of the recurring task so that it is not rescheduled. This also
+           * fails the `ScheduledFuture`, which might be visible only to users who operate directly
+           * on the delegate executor's queue.
+           *
+           * (Users who try to operate directly on the `ScheduledFuture` may have additional
+           * problems. For example, if they cancel that `Future`, it won't cancel the user-visible
+           * `ListenableScheduledTask`. This is essentially the same problem as the
+           * `ListenableScheduledTask` has with executor shutdown:
+           * https://github.com/google/guava/issues/3553)
+           */
           throw t;
         }
       }
@@ -784,15 +694,18 @@ public final class MoreExecutors {
       boolean timed,
       Duration timeout)
       throws InterruptedException, ExecutionException, TimeoutException {
-    return invokeAnyImpl(
-        executorService, tasks, timed, toNanosSaturated(timeout), TimeUnit.NANOSECONDS);
+    return invokeAnyImpl(executorService, tasks, timed, toNanosSaturated(timeout), NANOSECONDS);
   }
 
   /**
    * An implementation of {@link ExecutorService#invokeAny} for {@link ListeningExecutorService}
    * implementations.
    */
-  @SuppressWarnings("GoodTime") // should accept a java.time.Duration
+  @SuppressWarnings({
+    "GoodTime", // should accept a java.time.Duration
+    "CatchingUnchecked", // sneaky checked exception
+    "Interruption", // We copy AbstractExecutorService.invokeAny. Maybe we shouldn't: b/227335009.
+  })
   @J2ktIncompatible
   @GwtIncompatible
   @ParametricNullness
@@ -807,8 +720,8 @@ public final class MoreExecutors {
     checkNotNull(unit);
     int ntasks = tasks.size();
     checkArgument(ntasks > 0);
-    List<Future<T>> futures = Lists.newArrayListWithCapacity(ntasks);
-    BlockingQueue<Future<T>> futureQueue = Queues.newLinkedBlockingQueue();
+    List<Future<T>> futures = newArrayListWithCapacity(ntasks);
+    BlockingQueue<Future<T>> futureQueue = new LinkedBlockingQueue<>();
     long timeoutNanos = unit.toNanos(timeout);
 
     // For efficiency, especially in executors with limited
@@ -838,7 +751,7 @@ public final class MoreExecutors {
           } else if (active == 0) {
             break;
           } else if (timed) {
-            f = futureQueue.poll(timeoutNanos, TimeUnit.NANOSECONDS);
+            f = futureQueue.poll(timeoutNanos, NANOSECONDS);
             if (f == null) {
               throw new TimeoutException();
             }
@@ -855,7 +768,9 @@ public final class MoreExecutors {
             return f.get();
           } catch (ExecutionException eex) {
             ee = eex;
-          } catch (RuntimeException rex) {
+          } catch (InterruptedException iex) {
+            throw iex;
+          } catch (Exception rex) { // sneaky checked exception
             ee = new ExecutionException(rex);
           }
         }
@@ -878,18 +793,9 @@ public final class MoreExecutors {
   @J2ktIncompatible
   @GwtIncompatible // TODO
   private static <T extends @Nullable Object> ListenableFuture<T> submitAndAddQueueListener(
-      ListeningExecutorService executorService,
-      Callable<T> task,
-      final BlockingQueue<Future<T>> queue) {
-    final ListenableFuture<T> future = executorService.submit(task);
-    future.addListener(
-        new Runnable() {
-          @Override
-          public void run() {
-            queue.add(future);
-          }
-        },
-        directExecutor());
+      ListeningExecutorService executorService, Callable<T> task, BlockingQueue<Future<T>> queue) {
+    ListenableFuture<T> future = executorService.submit(task);
+    future.addListener(() -> queue.add(future), directExecutor());
     return future;
   }
 
@@ -903,31 +809,22 @@ public final class MoreExecutors {
    *
    * @since 14.0
    */
-  @Beta
   @J2ktIncompatible
   @GwtIncompatible // concurrency
   public static ThreadFactory platformThreadFactory() {
     if (!isAppEngineWithApiClasses()) {
-      return Executors.defaultThreadFactory();
+      return defaultThreadFactory();
     }
     try {
       return (ThreadFactory)
           Class.forName("com.google.appengine.api.ThreadManager")
               .getMethod("currentRequestThreadFactory")
               .invoke(null);
-      /*
-       * Do not merge the 3 catch blocks below. javac would infer a type of
-       * ReflectiveOperationException, which Animal Sniffer would reject. (Old versions of Android
-       * don't *seem* to mind, but there might be edge cases of which we're unaware.)
-       */
-    } catch (IllegalAccessException e) {
-      throw new RuntimeException("Couldn't invoke ThreadManager.currentRequestThreadFactory", e);
-    } catch (ClassNotFoundException e) {
-      throw new RuntimeException("Couldn't invoke ThreadManager.currentRequestThreadFactory", e);
-    } catch (NoSuchMethodException e) {
+    } catch (IllegalAccessException | ClassNotFoundException | NoSuchMethodException e) {
       throw new RuntimeException("Couldn't invoke ThreadManager.currentRequestThreadFactory", e);
     } catch (InvocationTargetException e) {
-      throw Throwables.propagate(e.getCause());
+      // `currentRequestThreadFactory` has no `throws` clause.
+      throw sneakyThrow(e.getCause());
     }
   }
 
@@ -972,7 +869,8 @@ public final class MoreExecutors {
   static Thread newThread(String name, Runnable runnable) {
     checkNotNull(name);
     checkNotNull(runnable);
-    Thread result = platformThreadFactory().newThread(runnable);
+    // TODO(b/139726489): Confirm that null is impossible here.
+    Thread result = requireNonNull(platformThreadFactory().newThread(runnable));
     try {
       result.setName(name);
     } catch (SecurityException e) {
@@ -997,15 +895,10 @@ public final class MoreExecutors {
    */
   @J2ktIncompatible
   @GwtIncompatible // concurrency
-  static Executor renamingDecorator(final Executor executor, final Supplier<String> nameSupplier) {
+  static Executor renamingDecorator(Executor executor, Supplier<String> nameSupplier) {
     checkNotNull(executor);
     checkNotNull(nameSupplier);
-    return new Executor() {
-      @Override
-      public void execute(Runnable command) {
-        executor.execute(Callables.threadRenaming(command, nameSupplier));
-      }
-    };
+    return command -> executor.execute(threadRenaming(command, nameSupplier));
   }
 
   /**
@@ -1021,19 +914,18 @@ public final class MoreExecutors {
    */
   @J2ktIncompatible
   @GwtIncompatible // concurrency
-  static ExecutorService renamingDecorator(
-      final ExecutorService service, final Supplier<String> nameSupplier) {
+  static ExecutorService renamingDecorator(ExecutorService service, Supplier<String> nameSupplier) {
     checkNotNull(service);
     checkNotNull(nameSupplier);
     return new WrappingExecutorService(service) {
       @Override
       protected <T extends @Nullable Object> Callable<T> wrapTask(Callable<T> callable) {
-        return Callables.threadRenaming(callable, nameSupplier);
+        return threadRenaming(callable, nameSupplier);
       }
 
       @Override
       protected Runnable wrapTask(Runnable command) {
-        return Callables.threadRenaming(command, nameSupplier);
+        return threadRenaming(command, nameSupplier);
       }
     };
   }
@@ -1052,18 +944,18 @@ public final class MoreExecutors {
   @J2ktIncompatible
   @GwtIncompatible // concurrency
   static ScheduledExecutorService renamingDecorator(
-      final ScheduledExecutorService service, final Supplier<String> nameSupplier) {
+      ScheduledExecutorService service, Supplier<String> nameSupplier) {
     checkNotNull(service);
     checkNotNull(nameSupplier);
     return new WrappingScheduledExecutorService(service) {
       @Override
       protected <T extends @Nullable Object> Callable<T> wrapTask(Callable<T> callable) {
-        return Callables.threadRenaming(callable, nameSupplier);
+        return threadRenaming(callable, nameSupplier);
       }
 
       @Override
       protected Runnable wrapTask(Runnable command) {
-        return Callables.threadRenaming(command, nameSupplier);
+        return threadRenaming(command, nameSupplier);
       }
     };
   }
@@ -1085,18 +977,20 @@ public final class MoreExecutors {
    * <p>If, at any step of the process, the calling thread is interrupted, the method calls {@link
    * ExecutorService#shutdownNow()} and returns.
    *
+   * <p>For a version of this method that waits <i>indefinitely</i>, use {@link
+   * ExecutorService#close}.
+   *
    * @param service the {@code ExecutorService} to shut down
    * @param timeout the maximum time to wait for the {@code ExecutorService} to terminate
    * @return {@code true} if the {@code ExecutorService} was terminated successfully, {@code false}
    *     if the call timed out or was interrupted
-   * @since 28.0
+   * @since 28.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   @CanIgnoreReturnValue
   @J2ktIncompatible
   @GwtIncompatible // java.time.Duration
   public static boolean shutdownAndAwaitTermination(ExecutorService service, Duration timeout) {
-    return shutdownAndAwaitTermination(service, toNanosSaturated(timeout), TimeUnit.NANOSECONDS);
+    return shutdownAndAwaitTermination(service, toNanosSaturated(timeout), NANOSECONDS);
   }
 
   /**
@@ -1116,6 +1010,9 @@ public final class MoreExecutors {
    * <p>If, at any step of the process, the calling thread is interrupted, the method calls {@link
    * ExecutorService#shutdownNow()} and returns.
    *
+   * <p>For a version of this method that waits <i>indefinitely</i>, use {@link
+   * ExecutorService#close}.
+   *
    * @param service the {@code ExecutorService} to shut down
    * @param timeout the maximum time to wait for the {@code ExecutorService} to terminate
    * @param unit the time unit of the timeout argument
@@ -1123,7 +1020,6 @@ public final class MoreExecutors {
    *     if the call timed out or was interrupted
    * @since 17.0
    */
-  @Beta
   @CanIgnoreReturnValue
   @J2ktIncompatible
   @GwtIncompatible // concurrency
@@ -1135,14 +1031,14 @@ public final class MoreExecutors {
     service.shutdown();
     try {
       // Wait for half the duration of the timeout for existing tasks to terminate
-      if (!service.awaitTermination(halfTimeoutNanos, TimeUnit.NANOSECONDS)) {
+      if (!service.awaitTermination(halfTimeoutNanos, NANOSECONDS)) {
         // Cancel currently executing tasks
         service.shutdownNow();
         // Wait the other half of the timeout for tasks to respond to being cancelled
-        service.awaitTermination(halfTimeoutNanos, TimeUnit.NANOSECONDS);
+        service.awaitTermination(halfTimeoutNanos, NANOSECONDS);
       }
     } catch (InterruptedException ie) {
-      // Preserve interrupt status
+      // Preserve interrupted status
       Thread.currentThread().interrupt();
       // (Re-)Cancel if current thread also interrupted
       service.shutdownNow();
@@ -1156,22 +1052,18 @@ public final class MoreExecutors {
    *
    * <p>Note, the returned executor can only be used once.
    */
-  static Executor rejectionPropagatingExecutor(
-      final Executor delegate, final AbstractFuture<?> future) {
+  static Executor rejectionPropagatingExecutor(Executor delegate, AbstractFuture<?> future) {
     checkNotNull(delegate);
     checkNotNull(future);
     if (delegate == directExecutor()) {
       // directExecutor() cannot throw RejectedExecutionException
       return delegate;
     }
-    return new Executor() {
-      @Override
-      public void execute(Runnable command) {
-        try {
-          delegate.execute(command);
-        } catch (RejectedExecutionException e) {
-          future.setException(e);
-        }
+    return command -> {
+      try {
+        delegate.execute(command);
+      } catch (RejectedExecutionException e) {
+        future.setExceptionInternal(e);
       }
     };
   }

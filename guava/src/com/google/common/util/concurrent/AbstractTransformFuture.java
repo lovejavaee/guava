@@ -22,24 +22,24 @@ import static com.google.common.util.concurrent.Platform.restoreInterruptIfIsInt
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.base.Function;
 import com.google.errorprone.annotations.ForOverride;
+import com.google.errorprone.annotations.concurrent.LazyInit;
+import com.google.j2objc.annotations.RetainedLocalRef;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** Implementations of {@code Futures.transform*}. */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
-@SuppressWarnings("nullness") // TODO(b/147136275): Remove once our checker understands & and |.
+// Whenever both tests are cheap and functional, it's faster to use &, | instead of &&, ||
+@SuppressWarnings("ShortCircuitBoolean")
 abstract class AbstractTransformFuture<
         I extends @Nullable Object, O extends @Nullable Object, F, T extends @Nullable Object>
     extends FluentFuture.TrustedFuture<O> implements Runnable {
-  static <I extends @Nullable Object, O extends @Nullable Object> ListenableFuture<O> create(
+  static <I extends @Nullable Object, O extends @Nullable Object> ListenableFuture<O> createAsync(
       ListenableFuture<I> input,
       AsyncFunction<? super I, ? extends O> function,
       Executor executor) {
-    checkNotNull(executor);
     AsyncTransformFuture<I, O> output = new AsyncTransformFuture<>(input, function);
     input.addListener(output, rejectionPropagatingExecutor(executor, output));
     return output;
@@ -47,7 +47,6 @@ abstract class AbstractTransformFuture<
 
   static <I extends @Nullable Object, O extends @Nullable Object> ListenableFuture<O> create(
       ListenableFuture<I> input, Function<? super I, ? extends O> function, Executor executor) {
-    checkNotNull(function);
     TransformFuture<I, O> output = new TransformFuture<>(input, function);
     input.addListener(output, rejectionPropagatingExecutor(executor, output));
     return output;
@@ -57,8 +56,8 @@ abstract class AbstractTransformFuture<
    * In certain circumstances, this field might theoretically not be visible to an afterDone() call
    * triggered by cancel(). For details, see the comments on the fields of TimeoutFuture.
    */
-  @CheckForNull ListenableFuture<? extends I> inputFuture;
-  @CheckForNull F function;
+  @LazyInit @Nullable ListenableFuture<? extends I> inputFuture;
+  @LazyInit @Nullable F function;
 
   AbstractTransformFuture(ListenableFuture<? extends I> inputFuture, F function) {
     this.inputFuture = checkNotNull(inputFuture);
@@ -66,9 +65,13 @@ abstract class AbstractTransformFuture<
   }
 
   @Override
+  @SuppressWarnings({
+    "CatchingUnchecked", // sneaky checked exception
+    "nullness", // TODO(b/147136275): Remove once our checker understands & and |.
+  })
   public final void run() {
-    ListenableFuture<? extends I> localInputFuture = inputFuture;
-    F localFunction = function;
+    @RetainedLocalRef ListenableFuture<? extends I> localInputFuture = inputFuture;
+    @RetainedLocalRef F localFunction = function;
     if (isCancelled() | localInputFuture == null | localFunction == null) {
       return;
     }
@@ -104,7 +107,7 @@ abstract class AbstractTransformFuture<
       // Set the cause of the exception as this future's exception.
       setException(e.getCause());
       return;
-    } catch (RuntimeException e) {
+    } catch (Exception e) { // sneaky checked exception
       // Bug in inputFuture.get(). Propagate to the output Future so that its consumers don't hang.
       setException(e);
       return;
@@ -180,16 +183,16 @@ abstract class AbstractTransformFuture<
 
   @Override
   protected final void afterDone() {
-    maybePropagateCancellationTo(inputFuture);
+    @RetainedLocalRef ListenableFuture<? extends I> localInputFuture = inputFuture;
+    maybePropagateCancellationTo(localInputFuture);
     this.inputFuture = null;
     this.function = null;
   }
 
   @Override
-  @CheckForNull
-  protected String pendingToString() {
-    ListenableFuture<? extends I> localInputFuture = inputFuture;
-    F localFunction = function;
+  protected @Nullable String pendingToString() {
+    @RetainedLocalRef ListenableFuture<? extends I> localInputFuture = inputFuture;
+    @RetainedLocalRef F localFunction = function;
     String superString = super.pendingToString();
     String resultString = "";
     if (localInputFuture != null) {
@@ -220,13 +223,13 @@ abstract class AbstractTransformFuture<
     ListenableFuture<? extends O> doTransform(
         AsyncFunction<? super I, ? extends O> function, @ParametricNullness I input)
         throws Exception {
-      ListenableFuture<? extends O> outputFuture = function.apply(input);
+      ListenableFuture<? extends O> output = function.apply(input);
       checkNotNull(
-          outputFuture,
+          output,
           "AsyncFunction.apply returned null instead of a Future. "
               + "Did you mean to return immediateFuture(null)? %s",
           function);
-      return outputFuture;
+      return output;
     }
 
     @Override

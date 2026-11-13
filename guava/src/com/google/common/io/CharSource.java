@@ -15,8 +15,8 @@
 package com.google.common.io;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Streams.stream;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Ascii;
@@ -24,11 +24,10 @@ import com.google.common.base.Optional;
 import com.google.common.base.Splitter;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Streams;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.MustBeClosed;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
@@ -36,12 +35,12 @@ import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A readable source of characters, such as a text file. Unlike a {@link Reader}, a {@code
@@ -84,7 +83,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public abstract class CharSource {
 
   /** Constructor for use by subclasses. */
@@ -101,7 +99,6 @@ public abstract class CharSource {
    *
    * @since 20.0
    */
-  @Beta
   public ByteSource asByteSource(Charset charset) {
     return new AsByteSource(charset);
   }
@@ -146,31 +143,34 @@ public abstract class CharSource {
    *
    * <p>The caller is responsible for ensuring that the returned stream is closed. For example:
    *
-   * <pre>{@code
+   * {@snippet :
    * try (Stream<String> lines = source.lines()) {
    *   lines.map(...)
-   *      .filter(...)
-   *      .forEach(...);
+   *       .filter(...)
+   *       .forEach(...);
    * }
-   * }</pre>
+   * }
    *
    * @throws IOException if an I/O error occurs while opening the stream
-   * @since 22.0
+   * @since 22.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   @MustBeClosed
   public Stream<String> lines() throws IOException {
     BufferedReader reader = openBufferedStream();
-    return reader
-        .lines()
-        .onClose(
-            () -> {
-              try {
-                reader.close();
-              } catch (IOException e) {
-                throw new UncheckedIOException(e);
-              }
-            });
+    return reader.lines().onClose(() -> closeUnchecked(reader));
+  }
+
+  @IgnoreJRERequirement // helper for lines()
+  /*
+   * If we make these calls inline inside the lambda inside lines(), we get an Animal Sniffer error,
+   * despite the @IgnoreJRERequirement annotation there. For details, see ImmutableSortedMultiset.
+   */
+  private static void closeUnchecked(Closeable closeable) {
+    try {
+      closeable.close();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   /**
@@ -187,7 +187,6 @@ public abstract class CharSource {
    *
    * @since 19.0
    */
-  @Beta
   public Optional<Long> lengthIfKnown() {
     return Optional.absent();
   }
@@ -211,7 +210,6 @@ public abstract class CharSource {
    * @throws IOException if an I/O error occurs while reading the length of this source
    * @since 19.0
    */
-  @Beta
   public long length() throws IOException {
     Optional<Long> lengthIfKnown = lengthIfKnown();
     if (lengthIfKnown.isPresent()) {
@@ -229,7 +227,7 @@ public abstract class CharSource {
     }
   }
 
-  private long countBySkipping(Reader reader) throws IOException {
+  private static long countBySkipping(Reader reader) throws IOException {
     long count = 0;
     long read;
     while ((read = reader.skip(Long.MAX_VALUE)) != 0) {
@@ -311,8 +309,7 @@ public abstract class CharSource {
    *
    * @throws IOException if an I/O error occurs while reading from this source
    */
-  @CheckForNull
-  public String readFirstLine() throws IOException {
+  public @Nullable String readFirstLine() throws IOException {
     Closer closer = Closer.create();
     try {
       BufferedReader reader = closer.register(openBufferedStream());
@@ -339,7 +336,7 @@ public abstract class CharSource {
     Closer closer = Closer.create();
     try {
       BufferedReader reader = closer.register(openBufferedStream());
-      List<String> result = Lists.newArrayList();
+      List<String> result = new ArrayList<>();
       String line;
       while ((line = reader.readLine()) != null) {
         result.add(line);
@@ -366,7 +363,6 @@ public abstract class CharSource {
    *     processor} throws an {@code IOException}
    * @since 16.0
    */
-  @Beta
   @CanIgnoreReturnValue // some processors won't return a useful result
   @ParametricNullness
   public <T extends @Nullable Object> T readLines(LineProcessor<T> processor) throws IOException {
@@ -394,9 +390,8 @@ public abstract class CharSource {
    *
    * @throws IOException if an I/O error occurs while reading from this source or if {@code action}
    *     throws an {@code UncheckedIOException}
-   * @since 22.0
+   * @since 22.0 (but only since 33.4.0 in the Android flavor)
    */
-  @Beta
   public void forEachLine(Consumer<? super String> action) throws IOException {
     try (Stream<String> lines = lines()) {
       // The lines should be ordered regardless in most cases, but use forEachOrdered to be sure
@@ -492,6 +487,9 @@ public abstract class CharSource {
    * returned {@code CharSource} and any {@code Reader} instances created by it is unspecified if
    * the {@code charSequence} is mutated while it is being read, so don't do that.
    *
+   * <p><b>Java 24+ users:</b> If you only need a {@link Reader}, prefer {@link
+   * Reader#of(CharSequence)}.
+   *
    * @since 15.0 (since 14.0 as {@code CharStreams.asCharSource(String)})
    */
   public static CharSource wrap(CharSequence charSequence) {
@@ -533,7 +531,7 @@ public abstract class CharSource {
 
     @Override
     public String toString() {
-      return CharSource.this.toString() + ".asByteSource(" + charset + ")";
+      return CharSource.this + ".asByteSource(" + charset + ")";
     }
   }
 
@@ -541,9 +539,9 @@ public abstract class CharSource {
 
     private static final Splitter LINE_SPLITTER = Splitter.onPattern("\r\n|\n|\r");
 
-    protected final CharSequence seq;
+    final CharSequence seq;
 
-    protected CharSequenceCharSource(CharSequence seq) {
+    CharSequenceCharSource(CharSequence seq) {
       this.seq = checkNotNull(seq);
     }
 
@@ -578,11 +576,10 @@ public abstract class CharSource {
      */
     private Iterator<String> linesIterator() {
       return new AbstractIterator<String>() {
-        Iterator<String> lines = LINE_SPLITTER.split(seq).iterator();
+        final Iterator<String> lines = LINE_SPLITTER.split(seq).iterator();
 
         @Override
-        @CheckForNull
-        protected String computeNext() {
+        protected @Nullable String computeNext() {
           if (lines.hasNext()) {
             String next = lines.next();
             // skip last line if it's empty
@@ -597,12 +594,11 @@ public abstract class CharSource {
 
     @Override
     public Stream<String> lines() {
-      return Streams.stream(linesIterator());
+      return stream(linesIterator());
     }
 
     @Override
-    @CheckForNull
-    public String readFirstLine() {
+    public @Nullable String readFirstLine() {
       Iterator<String> lines = linesIterator();
       return lines.hasNext() ? lines.next() : null;
     }
@@ -646,7 +642,7 @@ public abstract class CharSource {
    * </ul>
    */
   private static class StringCharSource extends CharSequenceCharSource {
-    protected StringCharSource(String seq) {
+    StringCharSource(String seq) {
       super(seq);
     }
 

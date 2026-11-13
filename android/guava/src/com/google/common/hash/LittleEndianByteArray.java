@@ -14,12 +14,14 @@
 
 package com.google.common.hash;
 
+import static java.lang.Math.min;
+
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.primitives.Longs;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
+import java.util.Objects;
 import sun.misc.Unsafe;
 
 /**
@@ -28,11 +30,13 @@ import sun.misc.Unsafe;
  * @author Kevin Damm
  * @author Kyle Maddison
  */
-@ElementTypesAreNonnullByDefault
 final class LittleEndianByteArray {
 
-  /** The instance that actually does the work; delegates to Unsafe or a pure-Java fallback. */
-  private static final LittleEndianBytes byteArray;
+  /**
+   * The instance that actually does the work; delegates to VarHandle, Unsafe, or a Java-8
+   * compatible pure-Java fallback.
+   */
+  private static final LittleEndianBytes byteArray = makeGetter();
 
   /**
    * Load 8 bytes into long in a little endian manner, from the substring between position and
@@ -65,7 +69,7 @@ final class LittleEndianByteArray {
     // of the result already being filled with zeros.
 
     // This loop is critical to performance, so please check HashBenchmark if altering it.
-    int limit = Math.min(length, 8);
+    int limit = min(length, 8);
     for (int i = 0; i < limit; i++) {
       // Shift value left while iterating logically through the array.
       result |= (input[offset + i] & 0xFFL) << (i * 8);
@@ -103,12 +107,12 @@ final class LittleEndianByteArray {
   }
 
   /**
-   * Indicates that the loading of Unsafe was successful and the load and store operations will be
-   * very efficient. May be useful for calling code to fall back on an alternative implementation
-   * that is slower than Unsafe.get/store but faster than the pure-Java mask-and-shift.
+   * Indicates that the load and store operations will be very efficient because of use of VarHandle
+   * or Unsafe. May be useful for calling code to fall back on an alternative implementation that is
+   * slower than those implementations but faster than the pure-Java mask-and-shift.
    */
-  static boolean usingUnsafe() {
-    return (byteArray instanceof UnsafeByteArray);
+  static boolean usingFastPath() {
+    return byteArray.usesFastPath();
   }
 
   /**
@@ -117,10 +121,13 @@ final class LittleEndianByteArray {
    * <p>This abstraction allows us to use single-instruction load and put when available, or fall
    * back on the slower approach of using Longs.fromBytes(byte...).
    */
-  private interface LittleEndianBytes {
+  @VisibleForTesting
+  interface LittleEndianBytes {
     long getLongLittleEndian(byte[] array, int offset);
 
     void putLongLittleEndian(byte[] array, int offset, long value);
+
+    boolean usesFastPath();
   }
 
   /**
@@ -128,7 +135,9 @@ final class LittleEndianByteArray {
    * Unsafe.theUnsafe is inaccessible, the attempt to load the nested class fails, and the outer
    * class's static initializer can fall back on a non-Unsafe version.
    */
-  private enum UnsafeByteArray implements LittleEndianBytes {
+  @SuppressWarnings({"SunApi", "removal"}) // b/345822163
+  @VisibleForTesting
+  enum UnsafeByteArray implements LittleEndianBytes {
     // Do *not* change the order of these constants!
     UNSAFE_LITTLE_ENDIAN {
       @Override
@@ -157,6 +166,11 @@ final class LittleEndianByteArray {
       }
     };
 
+    @Override
+    public boolean usesFastPath() {
+      return true;
+    }
+
     // Provides load and store operations that use native instructions to get better performance.
     private static final Unsafe theUnsafe;
 
@@ -176,21 +190,28 @@ final class LittleEndianByteArray {
         // We'll try reflection instead.
       }
       try {
-        return AccessController.doPrivileged(
-            (PrivilegedExceptionAction<Unsafe>)
-                () -> {
-                  Class<Unsafe> k = Unsafe.class;
-                  for (Field f : k.getDeclaredFields()) {
-                    f.setAccessible(true);
-                    Object x = f.get(null);
-                    if (k.isInstance(x)) {
-                      return k.cast(x);
-                    }
-                  }
-                  throw new NoSuchFieldError("the Unsafe");
-                });
-      } catch (PrivilegedActionException e) {
-        throw new RuntimeException("Could not initialize intrinsics", e.getCause());
+        PrivilegedExceptionAction<Unsafe> action =
+            () -> {
+              Class<Unsafe> k = Unsafe.class;
+              for (Field f : k.getDeclaredFields()) {
+                f.setAccessible(true);
+                Object x = f.get(null);
+                if (k.isInstance(x)) {
+                  return k.cast(x);
+                }
+              }
+              throw new NoSuchFieldError("the Unsafe");
+            };
+        try {
+          return (Unsafe)
+              Class.forName("java.security.AccessController")
+                  .getMethod("doPrivileged", PrivilegedExceptionAction.class)
+                  .invoke(null, action);
+        } catch (Exception e) {
+          return action.run();
+        }
+      } catch (Exception e) {
+        throw new RuntimeException("Could not initialize intrinsics", e);
       }
     }
 
@@ -205,7 +226,10 @@ final class LittleEndianByteArray {
     }
   }
 
-  /** Fallback implementation for when Unsafe is not available in our current environment. */
+  /**
+   * Fallback implementation for when VarHandle and Unsafe are not available in our current
+   * environment.
+   */
   private enum JavaLittleEndianBytes implements LittleEndianBytes {
     INSTANCE {
       @Override
@@ -228,11 +252,15 @@ final class LittleEndianByteArray {
           sink[offset + i] = (byte) ((value & mask) >> (i * 8));
         }
       }
+
+      @Override
+      public boolean usesFastPath() {
+        return false;
+      }
     }
   }
 
-  static {
-    LittleEndianBytes theGetter = JavaLittleEndianBytes.INSTANCE;
+  private static LittleEndianBytes makeGetter() {
     try {
       /*
        * UnsafeByteArray uses Unsafe.getLong() in an unsupported way, which is known to cause
@@ -246,16 +274,16 @@ final class LittleEndianByteArray {
        *
        */
       String arch = System.getProperty("os.arch");
-      if ("amd64".equals(arch)) {
-        theGetter =
-            ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)
-                ? UnsafeByteArray.UNSAFE_LITTLE_ENDIAN
-                : UnsafeByteArray.UNSAFE_BIG_ENDIAN;
+      if (Objects.equals(arch, "amd64")) {
+        return ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)
+            ? UnsafeByteArray.UNSAFE_LITTLE_ENDIAN
+            : UnsafeByteArray.UNSAFE_BIG_ENDIAN;
       }
     } catch (Throwable t) {
       // ensure we really catch *everything*
     }
-    byteArray = theGetter;
+
+    return JavaLittleEndianBytes.INSTANCE;
   }
 
   /** Deter instantiation of this class. */

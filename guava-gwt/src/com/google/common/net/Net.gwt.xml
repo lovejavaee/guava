@@ -10,7 +10,9 @@
     util.concurrent tests under Guava.
 
     The problem is that GWT responds poorly to two .gwt.xml files in the same
-    Java package; see https://goo.gl/pRV3Yn for details.
+    Java package; see
+    https://groups.google.com/g/google-web-toolkit-contributors/c/CqYH59Dt_rQ/m/uVGW1QdUsXUJ
+    for details.
 
     The summary is that it ignores one file in favor of the other.
     util.concurrent, like nearly all our packages, has two .gwt.xml files: one
@@ -32,6 +34,7 @@
 <inherits name="com.google.common.base.Base" />
 <inherits name="com.google.common.collect.Collect" />
 <inherits name="com.google.common.escape.Escape" />
+<inherits name="com.google.common.primitives.Primitives" />
 <inherits name="com.google.gwt.core.Core" />
 <inherits name="com.google.gwt.user.User" />
 <inherits name="com.google.thirdparty.publicsuffix.PublicSuffixPatterns" />

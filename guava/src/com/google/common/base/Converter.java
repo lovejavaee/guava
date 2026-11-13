@@ -18,6 +18,8 @@ import static com.google.common.base.NullnessCasts.uncheckedCastNullableTToT;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.ForOverride;
 import com.google.errorprone.annotations.InlineMe;
@@ -25,14 +27,15 @@ import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.j2objc.annotations.RetainedWith;
 import java.io.Serializable;
 import java.util.Iterator;
-import javax.annotation.CheckForNull;
+import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A function from {@code A} to {@code B} with an associated <i>reverse</i> function from {@code B}
  * to {@code A}; used for converting back and forth between <i>different representations of the same
  * information</i>.
  *
- * <h3>Invertibility</h3>
+ * <h2>Invertibility</h2>
  *
  * <p>The reverse operation <b>may</b> be a strict <i>inverse</i> (meaning that {@code
  * converter.reverse().convert(converter.convert(a)).equals(a)} is always true). However, it is very
@@ -48,7 +51,7 @@ import javax.annotation.CheckForNull;
  * <p>Note that it should still be the case that the round-tripped and original objects are
  * <i>similar</i>.
  *
- * <h3>Nullability</h3>
+ * <h2>Nullability</h2>
  *
  * <p>A converter always converts {@code null} to {@code null} and non-null references to non-null
  * references. It would not make sense to consider {@code null} and a non-null reference to be
@@ -57,7 +60,7 @@ import javax.annotation.CheckForNull;
  * behavior for all converters; implementations of {@link #doForward} and {@link #doBackward} are
  * guaranteed to never be passed {@code null}, and must never return {@code null}.
  *
- * <h3>Common ways to use</h3>
+ * <h2>Common ways to use</h2>
  *
  * <p>Getting a converter:
  *
@@ -69,9 +72,8 @@ import javax.annotation.CheckForNull;
  *       com.google.common.collect.Maps#asConverter Maps.asConverter}. For example, use this to
  *       create a "fake" converter for a unit test. It is unnecessary (and confusing) to <i>mock</i>
  *       the {@code Converter} type using a mocking framework.
+ *   <li>Pass two lambda expressions or method references to the {@link #from from} factory method.
  *   <li>Extend this class and implement its {@link #doForward} and {@link #doBackward} methods.
- *   <li><b>Java 8 users:</b> you may prefer to pass two lambda expressions or method references to
- *       the {@link #from from} factory method.
  * </ul>
  *
  * <p>Using a converter:
@@ -82,32 +84,34 @@ import javax.annotation.CheckForNull;
  *   <li>Convert in the "backward" direction using {@code converter.reverse().convert(b)} or {@code
  *       converter.reverse().convertAll(bs)}.
  *   <li>Use {@code converter} or {@code converter.reverse()} anywhere a {@link
- *       java.util.function.Function} is accepted (for example {@link java.util.stream.Stream#map
- *       Stream.map}).
+ *       java.util.function.Function} is accepted (for example {@link Stream#map Stream.map}).
  *   <li><b>Do not</b> call {@link #doForward} or {@link #doBackward} directly; these exist only to
  *       be overridden.
  * </ul>
  *
- * <h3>Example</h3>
+ * <h2>Example</h2>
  *
- * <pre>
- *   return new Converter&lt;Integer, String&gt;() {
- *     protected String doForward(Integer i) {
- *       return Integer.toHexString(i);
- *     }
- *
- *     protected Integer doBackward(String s) {
- *       return parseUnsignedInt(s, 16);
- *     }
- *   };</pre>
- *
- * <p>An alternative using Java 8:
- *
- * <pre>{@code
+ * {@snippet :
  * return Converter.from(
  *     Integer::toHexString,
  *     s -> parseUnsignedInt(s, 16));
- * }</pre>
+ * }
+ *
+ * <p>An alternative using a subclass:
+ *
+ * {@snippet :
+ * return new Converter<Integer, String>() {
+ *   @Override
+ *   protected String doForward(Integer i) {
+ *     return Integer.toHexString(i);
+ *   }
+ *
+ *   @Override
+ *   protected Integer doBackward(String s) {
+ *     return parseUnsignedInt(s, 16);
+ *   }
+ * };
+ * }
  *
  * @author Mike Ward
  * @author Kurt Alfred Kluever
@@ -115,7 +119,6 @@ import javax.annotation.CheckForNull;
  * @since 16.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 /*
  * 1. The type parameter is <T> rather than <T extends @Nullable> so that we can use T in the
  * doForward and doBackward methods to indicate that the parameter cannot be null. (We also take
@@ -144,7 +147,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
   private final boolean handleNullAutomatically;
 
   // We lazily cache the reverse view to avoid allocating on every call to reverse().
-  @LazyInit @RetainedWith @CheckForNull private transient Converter<B, A> reverse;
+  @LazyInit @RetainedWith private @Nullable Converter<B, A> reverse;
 
   /** Constructor for use by subclasses. */
   protected Converter() {
@@ -190,13 +193,11 @@ public abstract class Converter<A, B> implements Function<A, B> {
    *
    * @return the converted value; is null <i>if and only if</i> {@code a} is null
    */
-  @CheckForNull
-  public final B convert(@CheckForNull A a) {
+  public final @Nullable B convert(@Nullable A a) {
     return correctedDoForward(a);
   }
 
-  @CheckForNull
-  B correctedDoForward(@CheckForNull A a) {
+  @Nullable B correctedDoForward(@Nullable A a) {
     if (handleNullAutomatically) {
       // TODO(kevinb): we shouldn't be checking for a null result at runtime. Assert?
       return a == null ? null : checkNotNull(doForward(a));
@@ -205,8 +206,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
     }
   }
 
-  @CheckForNull
-  A correctedDoBackward(@CheckForNull B b) {
+  @Nullable A correctedDoBackward(@Nullable B b) {
     if (handleNullAutomatically) {
       // TODO(kevinb): we shouldn't be checking for a null result at runtime. Assert?
       return b == null ? null : checkNotNull(doBackward(b));
@@ -241,13 +241,11 @@ public abstract class Converter<A, B> implements Function<A, B> {
    * LegacyConverter does violate the assumptions we make elsewhere.
    */
 
-  @CheckForNull
-  private B unsafeDoForward(@CheckForNull A a) {
+  private @Nullable B unsafeDoForward(@Nullable A a) {
     return doForward(uncheckedCastNullableTToT(a));
   }
 
-  @CheckForNull
-  private A unsafeDoBackward(@CheckForNull B b) {
+  private @Nullable A unsafeDoBackward(@Nullable B b) {
     return doBackward(uncheckedCastNullableTToT(b));
   }
 
@@ -258,6 +256,9 @@ public abstract class Converter<A, B> implements Function<A, B> {
    * <p>The returned iterable's iterator supports {@code remove()} if the input iterator does. After
    * a successful {@code remove()} call, {@code fromIterable} no longer contains the corresponding
    * element.
+   *
+   * <p>We generally encourage using {@link Stream} over lazily computed views like this one. Here,
+   * that means using {@link Stream#map stream.map(converter)}.
    */
   /*
    * Just as Converter could implement `Function<@Nullable A, @Nullable B>` instead of `Function<A,
@@ -271,11 +272,9 @@ public abstract class Converter<A, B> implements Function<A, B> {
    */
   public Iterable<B> convertAll(Iterable<? extends A> fromIterable) {
     checkNotNull(fromIterable, "fromIterable");
-    return new Iterable<B>() {
-      @Override
-      public Iterator<B> iterator() {
-        return new Iterator<B>() {
-          private final Iterator<? extends A> fromIterator = fromIterable.iterator();
+    return () ->
+        new Iterator<B>() {
+          final Iterator<? extends A> fromIterator = fromIterable.iterator();
 
           @Override
           public boolean hasNext() {
@@ -292,8 +291,6 @@ public abstract class Converter<A, B> implements Function<A, B> {
             fromIterator.remove();
           }
         };
-      }
-    };
   }
 
   /**
@@ -307,7 +304,10 @@ public abstract class Converter<A, B> implements Function<A, B> {
   @CheckReturnValue
   public Converter<B, A> reverse() {
     Converter<B, A> result = reverse;
-    return (result == null) ? reverse = new ReverseConverter<>(this) : result;
+    if (result == null) {
+      result = reverse = new ReverseConverter<>(this);
+    }
+    return result;
   }
 
   private static final class ReverseConverter<A, B> extends Converter<B, A>
@@ -336,14 +336,12 @@ public abstract class Converter<A, B> implements Function<A, B> {
     }
 
     @Override
-    @CheckForNull
-    A correctedDoForward(@CheckForNull B b) {
+    @Nullable A correctedDoForward(@Nullable B b) {
       return original.correctedDoBackward(b);
     }
 
     @Override
-    @CheckForNull
-    B correctedDoBackward(@CheckForNull A a) {
+    @Nullable B correctedDoBackward(@Nullable A a) {
       return original.correctedDoForward(a);
     }
 
@@ -353,7 +351,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object instanceof ReverseConverter) {
         ReverseConverter<?, ?> that = (ReverseConverter<?, ?>) object;
         return this.original.equals(that.original);
@@ -371,7 +369,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
       return original + ".reverse()";
     }
 
-    private static final long serialVersionUID = 0L;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0L;
   }
 
   /**
@@ -418,19 +416,17 @@ public abstract class Converter<A, B> implements Function<A, B> {
     }
 
     @Override
-    @CheckForNull
-    C correctedDoForward(@CheckForNull A a) {
+    @Nullable C correctedDoForward(@Nullable A a) {
       return second.correctedDoForward(first.correctedDoForward(a));
     }
 
     @Override
-    @CheckForNull
-    A correctedDoBackward(@CheckForNull C c) {
+    @Nullable A correctedDoBackward(@Nullable C c) {
       return first.correctedDoBackward(second.correctedDoBackward(c));
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object instanceof ConverterComposition) {
         ConverterComposition<?, ?, ?> that = (ConverterComposition<?, ?, ?>) object;
         return this.first.equals(that.first) && this.second.equals(that.second);
@@ -448,7 +444,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
       return first + ".andThen(" + second + ")";
     }
 
-    private static final long serialVersionUID = 0L;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0L;
   }
 
   /**
@@ -480,18 +476,18 @@ public abstract class Converter<A, B> implements Function<A, B> {
   }
 
   /**
-   * Indicates whether another object is equal to this converter.
+   * <i>May</i> return {@code true} if {@code object} is a {@code Converter} that behaves
+   * identically to this converter.
    *
-   * <p>Most implementations will have no reason to override the behavior of {@link Object#equals}.
-   * However, an implementation may also choose to return {@code true} whenever {@code object} is a
-   * {@link Converter} that it considers <i>interchangeable</i> with this one. "Interchangeable"
-   * <i>typically</i> means that {@code Objects.equal(this.convert(a), that.convert(a))} is true for
-   * all {@code a} of type {@code A} (and similarly for {@code reverse}). Note that a {@code false}
-   * result from this method does not imply that the converters are known <i>not</i> to be
-   * interchangeable.
+   * <p><b>Warning: do not depend</b> on the behavior of this method.
+   *
+   * <p>Historically, {@code Converter} instances in this library have implemented this method to
+   * recognize certain cases where distinct {@code Converter} instances would in fact behave
+   * identically. However, this is not true of {@code Converter} implementations in general. It is
+   * best not to depend on it.
    */
   @Override
-  public boolean equals(@CheckForNull Object object) {
+  public boolean equals(@Nullable Object object) {
     return super.equals(object);
   }
 
@@ -540,7 +536,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object instanceof FunctionBasedConverter) {
         FunctionBasedConverter<?, ?> that = (FunctionBasedConverter<?, ?>) object;
         return this.forwardFunction.equals(that.forwardFunction)
@@ -558,6 +554,8 @@ public abstract class Converter<A, B> implements Function<A, B> {
     public String toString() {
       return "Converter.from(" + forwardFunction + ", " + backwardFunction + ")";
     }
+
+    @GwtIncompatible @J2ktIncompatible     private static final long serialVersionUID = 6500462374954026321L;
   }
 
   /** Returns a serializable converter that always converts or reverses an object to itself. */
@@ -571,7 +569,7 @@ public abstract class Converter<A, B> implements Function<A, B> {
    * "pass-through type".
    */
   private static final class IdentityConverter<T> extends Converter<T, T> implements Serializable {
-    static final IdentityConverter<?> INSTANCE = new IdentityConverter<>();
+    static final Converter<?, ?> INSTANCE = new IdentityConverter<>();
 
     @Override
     protected T doForward(T t) {
@@ -607,6 +605,6 @@ public abstract class Converter<A, B> implements Function<A, B> {
       return INSTANCE;
     }
 
-    private static final long serialVersionUID = 0L;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0L;
   }
 }

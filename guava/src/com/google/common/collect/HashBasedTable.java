@@ -17,8 +17,11 @@
 package com.google.common.collect;
 
 import static com.google.common.collect.CollectPreconditions.checkNonnegative;
+import static com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Supplier;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
@@ -46,10 +49,9 @@ import java.util.Map;
  * @author Jared Levy
  * @since 7.0
  */
-@GwtCompatible(serializable = true)
-@ElementTypesAreNonnullByDefault
-public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
-  private static class Factory<C, V> implements Supplier<Map<C, V>>, Serializable {
+@GwtCompatible
+public final class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
+  private static final class Factory<C, V> implements Supplier<Map<C, V>>, Serializable {
     final int expectedSize;
 
     Factory(int expectedSize) {
@@ -58,10 +60,10 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
 
     @Override
     public Map<C, V> get() {
-      return Maps.newLinkedHashMapWithExpectedSize(expectedSize);
+      return newLinkedHashMapWithExpectedSize(expectedSize);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /** Creates an empty {@code HashBasedTable}. */
@@ -80,8 +82,8 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
   public static <R, C, V> HashBasedTable<R, C, V> create(
       int expectedRows, int expectedCellsPerRow) {
     checkNonnegative(expectedCellsPerRow, "expectedCellsPerRow");
-    Map<R, Map<C, V>> backingMap = Maps.newLinkedHashMapWithExpectedSize(expectedRows);
-    return new HashBasedTable<>(backingMap, new Factory<C, V>(expectedCellsPerRow));
+    Map<R, Map<C, V>> backingMap = newLinkedHashMapWithExpectedSize(expectedRows);
+    return new HashBasedTable<>(backingMap, new Factory<>(expectedCellsPerRow));
   }
 
   /**
@@ -98,9 +100,9 @@ public class HashBasedTable<R, C, V> extends StandardTable<R, C, V> {
     return result;
   }
 
-  HashBasedTable(Map<R, Map<C, V>> backingMap, Factory<C, V> factory) {
+  private HashBasedTable(Map<R, Map<C, V>> backingMap, Factory<C, V> factory) {
     super(backingMap, factory);
   }
 
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

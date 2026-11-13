@@ -15,6 +15,8 @@
 package com.google.common.cache;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.ExecutionError;
@@ -40,7 +42,6 @@ import java.util.concurrent.ExecutionException;
  * @since 11.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public interface LoadingCache<K, V> extends Cache<K, V>, Function<K, V> {
 
   /**
@@ -154,6 +155,8 @@ public interface LoadingCache<K, V> extends Cache<K, V>, Function<K, V> {
    *
    * @since 11.0
    */
+  @GwtIncompatible
+  @J2ktIncompatible
   void refresh(K key);
 
   /**
@@ -163,5 +166,6 @@ public interface LoadingCache<K, V> extends Cache<K, V>, Function<K, V> {
    * cause entries to be automatically loaded.</b>
    */
   @Override
+  @J2ktIncompatible
   ConcurrentMap<K, V> asMap();
 }

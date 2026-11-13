@@ -16,29 +16,39 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.collect.testing.Helpers.misleadingSizeCollection;
+import static com.google.common.collect.testing.Helpers.testComparator;
+import static com.google.common.primitives.Ints.max;
+import static com.google.common.primitives.Ints.min;
+import static com.google.common.testing.SerializableTester.reserialize;
+import static com.google.common.testing.SerializableTester.reserializeAndAssert;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Converter;
-import com.google.common.collect.testing.Helpers;
 import com.google.common.testing.NullPointerTester;
-import com.google.common.testing.SerializableTester;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Unit test for {@link Ints}.
  *
  * @author Kevin Bourrillion
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullMarked
 @SuppressWarnings("cast") // redundant casts are intentional and harmless
 public class IntsTest extends TestCase {
   private static final int[] EMPTY = {};
@@ -50,9 +60,11 @@ public class IntsTest extends TestCase {
 
   private static final int[] VALUES = {LEAST, (int) -1, (int) 0, (int) 1, GREATEST};
 
+  // We need to test that our method behaves like the JDK method.
+  @SuppressWarnings("InlineMeInliner")
   public void testHashCode() {
     for (int value : VALUES) {
-      assertThat(Ints.hashCode(value)).isEqualTo(((Integer) value).hashCode());
+      assertThat(Ints.hashCode(value)).isEqualTo(Integer.hashCode(value));
     }
   }
 
@@ -77,23 +89,18 @@ public class IntsTest extends TestCase {
   }
 
   private static void assertCastFails(long value) {
-    try {
-      Ints.checkedCast(value);
-      fail("Cast to int should have failed: " + value);
-    } catch (IllegalArgumentException ex) {
-      assertWithMessage(value + " not found in exception text: " + ex.getMessage())
-          .that(ex.getMessage().contains(String.valueOf(value)))
-          .isTrue();
-    }
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> Ints.checkedCast(value));
+    assertThat(ex).hasMessageThat().contains(String.valueOf(value));
   }
 
+  // We need to test that our method behaves like the JDK method.
+  @SuppressWarnings("InlineMeInliner")
   public void testCompare() {
     for (int x : VALUES) {
       for (int y : VALUES) {
         // note: spec requires only that the sign is the same
-        assertWithMessage(x + ", " + y)
-            .that(Ints.compare(x, y))
-            .isEqualTo(Integer.valueOf(x).compareTo(y));
+        assertWithMessage("%s, %s", x, y).that(Ints.compare(x, y)).isEqualTo(Integer.compare(x, y));
       }
     }
   }
@@ -117,6 +124,28 @@ public class IntsTest extends TestCase {
     assertThat(Ints.indexOf(ARRAY234, (int) 3)).isEqualTo(1);
     assertThat(Ints.indexOf(ARRAY234, (int) 4)).isEqualTo(2);
     assertThat(Ints.indexOf(new int[] {(int) 2, (int) 3, (int) 2, (int) 3}, (int) 3)).isEqualTo(1);
+  }
+
+  public void testIndexOfIndexed() {
+    assertThat(Ints.indexOf(EMPTY, (int) 1, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY1, (int) 2, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, (int) 1, 0, 3)).isEqualTo(-1);
+    assertThat(Ints.indexOf(new int[] {(int) -1}, (int) -1, 0, 1)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, (int) 2, 0, 3)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, (int) 2, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, (int) 2, 1, 3)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, (int) 3, 1, 2)).isEqualTo(1);
+    assertThat(Ints.indexOf(ARRAY234, (int) 3, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, (int) 4, 2, 3)).isEqualTo(2);
+    assertThat(Ints.indexOf(ARRAY234, (int) 4, 0, 2)).isEqualTo(-1);
+    assertThat(Ints.indexOf(new int[] {(int) 2, (int) 3, (int) 2, (int) 3}, (int) 3, 2, 4))
+        .isEqualTo(3);
+    assertThat(Ints.indexOf(new int[] {(int) 3, (int) 3, (int) 3, (int) 3}, (int) 3, 1, 3))
+        .isEqualTo(1);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, (int) 2, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, (int) 2, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, (int) 2, 2, 1));
   }
 
   public void testIndexOf_arrayTarget() {
@@ -151,6 +180,75 @@ public class IntsTest extends TestCase {
         .isEqualTo(-1);
   }
 
+  public void testIndexOf_arrayTargetIndexed() {
+    assertThat(Ints.indexOf(EMPTY, EMPTY, 0, 0)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, EMPTY, 0, 3)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, EMPTY, 1, 3)).isEqualTo(1);
+    assertThat(Ints.indexOf(ARRAY234, EMPTY, 2, 2)).isEqualTo(2);
+    assertThat(Ints.indexOf(ARRAY234, EMPTY, 3, 3)).isEqualTo(3);
+    assertThat(Ints.indexOf(EMPTY, ARRAY234, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, ARRAY1, 0, 3)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY1, ARRAY234, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY1, ARRAY1, 0, 1)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY1, ARRAY1, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY1, ARRAY1, 1, 1)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, ARRAY234, 0, 3)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, ARRAY234, 0, 2)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, ARRAY234, 1, 3)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 2, (int) 3}, 0, 3)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 2, (int) 3}, 0, 2)).isEqualTo(0);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 2, (int) 3}, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 2, (int) 3}, 1, 3)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 3, (int) 4}, 0, 3)).isEqualTo(1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 3, (int) 4}, 1, 3)).isEqualTo(1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 3, (int) 4}, 1, 2)).isEqualTo(-1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 3}, 1, 2)).isEqualTo(1);
+    assertThat(Ints.indexOf(ARRAY234, new int[] {(int) 4}, 2, 3)).isEqualTo(2);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 2, (int) 3, (int) 3, (int) 3, (int) 3}, new int[] {(int) 3}, 2, 5))
+        .isEqualTo(2);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 2, (int) 3, (int) 2, (int) 3, (int) 4, (int) 2, (int) 3},
+                new int[] {(int) 2, (int) 3, (int) 4},
+                0,
+                7))
+        .isEqualTo(2);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 2, (int) 3, (int) 2, (int) 3, (int) 4, (int) 2, (int) 3},
+                new int[] {(int) 2, (int) 3, (int) 4},
+                2,
+                5))
+        .isEqualTo(2);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 2, (int) 3, (int) 2, (int) 3, (int) 4, (int) 2, (int) 3},
+                new int[] {(int) 2, (int) 3, (int) 4},
+                2,
+                4))
+        .isEqualTo(-1);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 2, (int) 2, (int) 3, (int) 4, (int) 2, (int) 3, (int) 4},
+                new int[] {(int) 2, (int) 3, (int) 4},
+                2,
+                7))
+        .isEqualTo(4);
+    assertThat(
+            Ints.indexOf(
+                new int[] {(int) 4, (int) 3, (int) 2}, new int[] {(int) 2, (int) 3, (int) 4}, 0, 3))
+        .isEqualTo(-1);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, ARRAY1, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, ARRAY1, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, ARRAY1, 2, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, EMPTY, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, EMPTY, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.indexOf(ARRAY234, EMPTY, 2, 1));
+  }
+
   public void testLastIndexOf() {
     assertThat(Ints.lastIndexOf(EMPTY, (int) 1)).isEqualTo(-1);
     assertThat(Ints.lastIndexOf(ARRAY1, (int) 2)).isEqualTo(-1);
@@ -163,35 +261,49 @@ public class IntsTest extends TestCase {
         .isEqualTo(3);
   }
 
+  public void testLastIndexOfIndexed() {
+    assertThat(Ints.lastIndexOf(EMPTY, (int) 1, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(ARRAY1, (int) 2, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 1, 0, 3)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(new int[] {(int) -1}, (int) -1, 0, 1)).isEqualTo(0);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 2, 0, 3)).isEqualTo(0);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 2, 0, 0)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 2, 1, 3)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 3, 1, 2)).isEqualTo(1);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 3, 0, 1)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 4, 2, 3)).isEqualTo(2);
+    assertThat(Ints.lastIndexOf(ARRAY234, (int) 4, 0, 2)).isEqualTo(-1);
+    assertThat(Ints.lastIndexOf(new int[] {(int) 2, (int) 3, (int) 2, (int) 3}, (int) 3, 0, 3))
+        .isEqualTo(1);
+    assertThat(Ints.lastIndexOf(new int[] {(int) 3, (int) 3, (int) 3, (int) 3}, (int) 3, 1, 3))
+        .isEqualTo(2);
+
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.lastIndexOf(ARRAY234, (int) 2, -1, 1));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.lastIndexOf(ARRAY234, (int) 2, 0, 4));
+    assertThrows(IndexOutOfBoundsException.class, () -> Ints.lastIndexOf(ARRAY234, (int) 2, 2, 1));
+  }
+
   @GwtIncompatible
   public void testMax_noArgs() {
-    try {
-      Ints.max();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> max());
   }
 
   public void testMax() {
-    assertThat(Ints.max(LEAST)).isEqualTo(LEAST);
-    assertThat(Ints.max(GREATEST)).isEqualTo(GREATEST);
-    assertThat(Ints.max((int) 8, (int) 6, (int) 7, (int) 5, (int) 3, (int) 0, (int) 9))
+    assertThat(max(LEAST)).isEqualTo(LEAST);
+    assertThat(max(GREATEST)).isEqualTo(GREATEST);
+    assertThat(max((int) 8, (int) 6, (int) 7, (int) 5, (int) 3, (int) 0, (int) 9))
         .isEqualTo((int) 9);
   }
 
   @GwtIncompatible
   public void testMin_noArgs() {
-    try {
-      Ints.min();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> min());
   }
 
   public void testMin() {
-    assertThat(Ints.min(LEAST)).isEqualTo(LEAST);
-    assertThat(Ints.min(GREATEST)).isEqualTo(GREATEST);
-    assertThat(Ints.min((int) 8, (int) 6, (int) 7, (int) 5, (int) 3, (int) 0, (int) 9))
+    assertThat(min(LEAST)).isEqualTo(LEAST);
+    assertThat(min(GREATEST)).isEqualTo(GREATEST);
+    assertThat(min((int) 8, (int) 6, (int) 7, (int) 5, (int) 3, (int) 0, (int) 9))
         .isEqualTo((int) 0);
   }
 
@@ -201,11 +313,8 @@ public class IntsTest extends TestCase {
     assertThat(Ints.constrainToRange((int) 1, (int) 3, (int) 5)).isEqualTo((int) 3);
     assertThat(Ints.constrainToRange((int) 0, (int) -5, (int) -1)).isEqualTo((int) -1);
     assertThat(Ints.constrainToRange((int) 5, (int) 2, (int) 2)).isEqualTo((int) 2);
-    try {
-      Ints.constrainToRange((int) 1, (int) 3, (int) 2);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class, () -> Ints.constrainToRange((int) 1, (int) 3, (int) 2));
   }
 
   public void testConcat() {
@@ -221,6 +330,33 @@ public class IntsTest extends TestCase {
         .isEqualTo(new int[] {(int) 1, (int) 2, (int) 3, (int) 4});
   }
 
+  @GwtIncompatible // different overflow behavior; could probably be made to work by using ~~
+  public void testConcat_overflow_negative() {
+    int dim1 = 1 << 16;
+    int dim2 = 1 << 15;
+    assertThat(dim1 * dim2).isLessThan(0);
+    testConcatOverflow(dim1, dim2);
+  }
+
+  @GwtIncompatible // different overflow behavior; could probably be made to work by using ~~
+  public void testConcat_overflow_nonNegative() {
+    int dim1 = 1 << 16;
+    int dim2 = 1 << 16;
+    assertThat(dim1 * dim2).isAtLeast(0);
+    testConcatOverflow(dim1, dim2);
+  }
+
+  private static void testConcatOverflow(int arraysDim1, int arraysDim2) {
+    assertThat((long) arraysDim1 * arraysDim2).isNotEqualTo((long) (arraysDim1 * arraysDim2));
+
+    int[][] arrays = new int[arraysDim1][];
+    // it's shared to avoid using too much memory in tests
+    int[] sharedArray = new int[arraysDim2];
+    Arrays.fill(arrays, sharedArray);
+
+    assertThrows(IllegalArgumentException.class, () -> Ints.concat(arrays));
+  }
+
   public void testToByteArray() {
     assertThat(Ints.toByteArray(0x12131415)).isEqualTo(new byte[] {0x12, 0x13, 0x14, 0x15});
     assertThat(Ints.toByteArray(0xFFEEDDCC))
@@ -234,11 +370,8 @@ public class IntsTest extends TestCase {
   }
 
   public void testFromByteArrayFails() {
-    try {
-      Ints.fromByteArray(new byte[Ints.BYTES - 1]);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(
+        IllegalArgumentException.class, () -> Ints.fromByteArray(new byte[Ints.BYTES - 1]));
   }
 
   public void testFromBytes() {
@@ -270,17 +403,8 @@ public class IntsTest extends TestCase {
   }
 
   public void testEnsureCapacity_fail() {
-    try {
-      Ints.ensureCapacity(ARRAY1, -1, 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
-    try {
-      // notice that this should even fail when no growth was needed
-      Ints.ensureCapacity(ARRAY1, 1, -1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> Ints.ensureCapacity(ARRAY1, -1, 1));
+    assertThrows(IllegalArgumentException.class, () -> Ints.ensureCapacity(ARRAY1, 1, -1));
   }
 
   public void testJoin() {
@@ -292,7 +416,7 @@ public class IntsTest extends TestCase {
 
   public void testLexicographicalComparator() {
     List<int[]> ordered =
-        Arrays.asList(
+        asList(
             new int[] {},
             new int[] {LEAST},
             new int[] {LEAST, LEAST},
@@ -304,13 +428,14 @@ public class IntsTest extends TestCase {
             new int[] {GREATEST, GREATEST, GREATEST});
 
     Comparator<int[]> comparator = Ints.lexicographicalComparator();
-    Helpers.testComparator(comparator, ordered);
+    testComparator(comparator, ordered);
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // SerializableTester
   public void testLexicographicalComparatorSerializable() {
     Comparator<int[]> comparator = Ints.lexicographicalComparator();
-    assertThat(SerializableTester.reserialize(comparator)).isSameInstanceAs(comparator);
+    assertThat(reserialize(comparator)).isSameInstanceAs(comparator);
   }
 
   public void testReverse() {
@@ -355,17 +480,25 @@ public class IntsTest extends TestCase {
     assertThat(input).isEqualTo(expectedOutput);
   }
 
-  public void testRotate() {
-    testRotate(new int[] {}, -1, new int[] {});
-    testRotate(new int[] {}, 0, new int[] {});
-    testRotate(new int[] {}, 1, new int[] {});
+  public void testRotate_emptyArray() {
+    int[] empty = {};
+    int[] expected = {};
+    testRotate(empty, -1, expected);
+    testRotate(empty, 0, expected);
+    testRotate(empty, 1, expected);
+  }
 
-    testRotate(new int[] {1}, -2, new int[] {1});
-    testRotate(new int[] {1}, -1, new int[] {1});
-    testRotate(new int[] {1}, 0, new int[] {1});
-    testRotate(new int[] {1}, 1, new int[] {1});
-    testRotate(new int[] {1}, 2, new int[] {1});
+  public void testRotate_singleElementArray() {
+    int[] single = {1};
+    int[] expected = {1};
+    testRotate(single, -2, expected);
+    testRotate(single, -1, expected);
+    testRotate(single, 0, expected);
+    testRotate(single, 1, expected);
+    testRotate(single, 2, expected);
+  }
 
+  public void testRotate_multiElementArray() {
     testRotate(new int[] {1, 2}, -3, new int[] {2, 1});
     testRotate(new int[] {1, 2}, -1, new int[] {2, 1});
     testRotate(new int[] {1, 2}, -2, new int[] {1, 2});
@@ -405,13 +538,39 @@ public class IntsTest extends TestCase {
     testRotate(new int[] {1, 2, 3, 4, 5}, 6, new int[] {5, 1, 2, 3, 4});
   }
 
-  public void testRotateIndexed() {
-    testRotate(new int[] {}, 0, 0, 0, new int[] {});
+  public void testRotate_minValueDistance() {
+    testRotate(new int[] {1, 2, 3}, Integer.MIN_VALUE, new int[] {3, 1, 2});
+    testRotate(new int[] {0, 1, 2, 3, 4}, Integer.MIN_VALUE, 1, 4, new int[] {0, 3, 1, 2, 4});
+  }
 
-    testRotate(new int[] {1}, 0, 0, 1, new int[] {1});
-    testRotate(new int[] {1}, 1, 0, 1, new int[] {1});
-    testRotate(new int[] {1}, 1, 1, 1, new int[] {1});
+  public void testRotateIndexed_emptyRange() {
+    int[] empty = {};
+    int[] expectedEmpty = {};
+    testRotate(empty, 0, 0, 0, expectedEmpty);
 
+    int[] single = {1};
+    int[] expectedSingle = {1};
+    testRotate(single, 1, 1, 1, expectedSingle);
+
+    int[] array = {0, 1, 2};
+    int[] expectedArray = {0, 1, 2};
+    testRotate(array, 1, 1, 1, expectedArray);
+    testRotate(array, -1, 2, 2, expectedArray);
+  }
+
+  public void testRotateIndexed_singleElementRange() {
+    int[] single = {1};
+    int[] expectedSingle = {1};
+    testRotate(single, 0, 0, 1, expectedSingle);
+    testRotate(single, 1, 0, 1, expectedSingle);
+
+    int[] array = {0, 1, 2};
+    int[] expectedArray = {0, 1, 2};
+    testRotate(array, 1, 1, 2, expectedArray);
+    testRotate(array, -1, 2, 3, expectedArray);
+  }
+
+  public void testRotateIndexed_multiElementRange() {
     // Rotate the central 5 elements, leaving the ends as-is
     testRotate(new int[] {0, 1, 2, 3, 4, 5, 6}, -6, 1, 6, new int[] {0, 2, 3, 4, 5, 1, 6});
     testRotate(new int[] {0, 1, 2, 3, 4, 5, 6}, -1, 1, 6, new int[] {0, 2, 3, 4, 5, 1, 6});
@@ -469,22 +628,23 @@ public class IntsTest extends TestCase {
     testSortDescending(new int[] {-1, -2, 1, 2}, 1, 3, new int[] {-1, 1, -2, 2});
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // SerializableTester
   public void testStringConverterSerialization() {
-    SerializableTester.reserializeAndAssert(Ints.stringConverter());
+    reserializeAndAssert(Ints.stringConverter());
   }
 
   public void testToArray() {
     // need explicit type parameter to avoid javac warning!?
-    List<Integer> none = Arrays.<Integer>asList();
+    List<Integer> none = Arrays.asList();
     assertThat(Ints.toArray(none)).isEqualTo(EMPTY);
 
-    List<Integer> one = Arrays.asList((int) 1);
+    List<Integer> one = asList((int) 1);
     assertThat(Ints.toArray(one)).isEqualTo(ARRAY1);
 
     int[] array = {(int) 0, (int) 1, (int) 0xdeadbeef};
 
-    List<Integer> three = Arrays.asList((int) 0, (int) 1, (int) 0xdeadbeef);
+    List<Integer> three = asList((int) 0, (int) 1, (int) 0xdeadbeef);
     assertThat(Ints.toArray(three)).isEqualTo(array);
 
     assertThat(Ints.toArray(Ints.asList(array))).isEqualTo(array);
@@ -494,7 +654,7 @@ public class IntsTest extends TestCase {
     for (int delta : new int[] {+1, 0, -1}) {
       for (int i = 0; i < VALUES.length; i++) {
         List<Integer> list = Ints.asList(VALUES).subList(0, i);
-        Collection<Integer> misleadingSize = Helpers.misleadingSizeCollection(delta);
+        Collection<Integer> misleadingSize = misleadingSizeCollection(delta);
         misleadingSize.addAll(list);
         int[] arr = Ints.toArray(misleadingSize);
         assertThat(arr).hasLength(i);
@@ -505,24 +665,21 @@ public class IntsTest extends TestCase {
     }
   }
 
+  @SuppressWarnings("nullness") // test of a bogus call
   public void testToArray_withNull() {
-    List<Integer> list = Arrays.asList((int) 0, (int) 1, null);
-    try {
-      Ints.toArray(list);
-      fail();
-    } catch (NullPointerException expected) {
-    }
+    List<@Nullable Integer> list = asList((int) 0, (int) 1, null);
+    assertThrows(NullPointerException.class, () -> Ints.toArray(list));
   }
 
   public void testToArray_withConversion() {
     int[] array = {0, 1, 2};
 
-    List<Byte> bytes = Arrays.asList((byte) 0, (byte) 1, (byte) 2);
-    List<Short> shorts = Arrays.asList((short) 0, (short) 1, (short) 2);
-    List<Integer> ints = Arrays.asList(0, 1, 2);
-    List<Float> floats = Arrays.asList((float) 0, (float) 1, (float) 2);
-    List<Long> longs = Arrays.asList((long) 0, (long) 1, (long) 2);
-    List<Double> doubles = Arrays.asList((double) 0, (double) 1, (double) 2);
+    List<Byte> bytes = asList((byte) 0, (byte) 1, (byte) 2);
+    List<Short> shorts = asList((short) 0, (short) 1, (short) 2);
+    List<Integer> ints = asList(0, 1, 2);
+    List<Float> floats = asList(0.0f, 1.0f, 2.0f);
+    List<Long> longs = asList(0L, 1L, 2L);
+    List<Double> doubles = asList(0.0, 1.0, 2.0);
 
     assertThat(Ints.toArray(bytes)).isEqualTo(array);
     assertThat(Ints.toArray(shorts)).isEqualTo(array);
@@ -532,6 +689,7 @@ public class IntsTest extends TestCase {
     assertThat(Ints.toArray(doubles)).isEqualTo(array);
   }
 
+  @J2ktIncompatible // b/239034072: Kotlin varargs copy parameter arrays.
   public void testAsList_isAView() {
     int[] array = {(int) 0, (int) 1};
     List<Integer> list = Ints.asList(array);
@@ -561,10 +719,13 @@ public class IntsTest extends TestCase {
     assertThat(Ints.toArray(list.subList(2, 2))).isEqualTo(new int[] {});
   }
 
+  // `primitives` can't depend on `collect`, so this is what the prod code has to return.
+  @SuppressWarnings("EmptyList")
   public void testAsListEmpty() {
-    assertThat(Ints.asList(EMPTY)).isSameInstanceAs(Collections.emptyList());
+    assertThat(Ints.asList(EMPTY)).isSameInstanceAs(emptyList());
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(Ints.class);
@@ -572,22 +733,18 @@ public class IntsTest extends TestCase {
 
   public void testStringConverter_convert() {
     Converter<String, Integer> converter = Ints.stringConverter();
-    assertThat(converter.convert("1")).isEqualTo((Integer) 1);
-    assertThat(converter.convert("0")).isEqualTo((Integer) 0);
-    assertThat(converter.convert("-1")).isEqualTo((Integer) (-1));
-    assertThat(converter.convert("0xff")).isEqualTo((Integer) 255);
-    assertThat(converter.convert("0xFF")).isEqualTo((Integer) 255);
-    assertThat(converter.convert("-0xFF")).isEqualTo((Integer) (-255));
-    assertThat(converter.convert("#0000FF")).isEqualTo((Integer) 255);
-    assertThat(converter.convert("0666")).isEqualTo((Integer) 438);
+    assertThat(converter.convert("1")).isEqualTo(1);
+    assertThat(converter.convert("0")).isEqualTo(0);
+    assertThat(converter.convert("-1")).isEqualTo(-1);
+    assertThat(converter.convert("0xff")).isEqualTo(255);
+    assertThat(converter.convert("0xFF")).isEqualTo(255);
+    assertThat(converter.convert("-0xFF")).isEqualTo(-255);
+    assertThat(converter.convert("#0000FF")).isEqualTo(255);
+    assertThat(converter.convert("0666")).isEqualTo(438);
   }
 
   public void testStringConverter_convertError() {
-    try {
-      Ints.stringConverter().convert("notanumber");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> Ints.stringConverter().convert("notanumber"));
   }
 
   public void testStringConverter_nullConversions() {
@@ -606,8 +763,9 @@ public class IntsTest extends TestCase {
     assertThat(converter.reverse().convert(0666)).isEqualTo("438");
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
-  public void testStringConverter_nullPointerTester() throws Exception {
+  public void testStringConverter_nullPointerTester() {
     NullPointerTester tester = new NullPointerTester();
     tester.testAllPublicInstanceMethods(Ints.stringConverter());
   }
@@ -657,16 +815,16 @@ public class IntsTest extends TestCase {
       radixEncodeParseAndAssertEquals(-8000, radix);
       radixEncodeParseAndAssertEquals(GREATEST, radix);
       radixEncodeParseAndAssertEquals(LEAST, radix);
-      assertWithMessage("Radix: " + radix).that(Ints.tryParse("9999999999999999", radix)).isNull();
-      assertWithMessage("Radix: " + radix)
+      assertWithMessage("Radix: %s", radix).that(Ints.tryParse("9999999999999999", radix)).isNull();
+      assertWithMessage("Radix: %s", radix)
           .that(Ints.tryParse(Long.toString((long) GREATEST + 1, radix), radix))
           .isNull();
-      assertWithMessage("Radix: " + radix)
+      assertWithMessage("Radix: %s", radix)
           .that(Ints.tryParse(Long.toString((long) LEAST - 1, radix), radix))
           .isNull();
     }
     assertWithMessage("Hex string and dec parm").that(Ints.tryParse("FFFF", 10)).isNull();
-    assertWithMessage("Mixed hex case").that((int) Ints.tryParse("ffFF", 16)).isEqualTo(65535);
+    assertWithMessage("Mixed hex case").that(Ints.tryParse("ffFF", 16)).isEqualTo(65535);
   }
 
   /**
@@ -674,33 +832,22 @@ public class IntsTest extends TestCase {
    * to parse the result. Asserts the result is the same as what we started with.
    */
   private static void radixEncodeParseAndAssertEquals(Integer value, int radix) {
-    assertWithMessage("Radix: " + radix)
+    assertWithMessage("Radix: %s", radix)
         .that(Ints.tryParse(Integer.toString(value, radix), radix))
         .isEqualTo(value);
   }
 
   public void testTryParse_radixTooBig() {
-    try {
-      Ints.tryParse("0", Character.MAX_RADIX + 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> Ints.tryParse("0", Character.MAX_RADIX + 1));
   }
 
   public void testTryParse_radixTooSmall() {
-    try {
-      Ints.tryParse("0", Character.MIN_RADIX - 1);
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> Ints.tryParse("0", Character.MIN_RADIX - 1));
   }
 
+  @SuppressWarnings("nullness") // test of a bogus call
   public void testTryParse_withNullGwt() {
     assertThat(Ints.tryParse("null")).isNull();
-    try {
-      Ints.tryParse(null);
-      fail("Expected NPE");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> Ints.tryParse(null));
   }
 }

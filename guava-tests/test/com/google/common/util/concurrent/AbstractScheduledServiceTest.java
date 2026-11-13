@@ -19,10 +19,14 @@ package com.google.common.util.concurrent;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.util.concurrent.AbstractScheduledService.Scheduler.newFixedDelaySchedule;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import static java.util.concurrent.Executors.newScheduledThreadPool;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertThrows;
 
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.util.concurrent.AbstractScheduledService.Cancellable;
 import com.google.common.util.concurrent.AbstractScheduledService.Scheduler;
 import com.google.common.util.concurrent.Service.State;
@@ -32,7 +36,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Delayed;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -43,32 +46,39 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import junit.framework.TestCase;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Unit test for {@link AbstractScheduledService}.
  *
  * @author Luke Sandberg
  */
+@NullUnmarked
+@GwtIncompatible
+@J2ktIncompatible
 public class AbstractScheduledServiceTest extends TestCase {
 
   volatile Scheduler configuration = newFixedDelaySchedule(0, 10, MILLISECONDS);
-  volatile @Nullable ScheduledFuture<?> future = null;
+  volatile @Nullable ScheduledFuture<?> future;
 
-  volatile boolean atFixedRateCalled = false;
-  volatile boolean withFixedDelayCalled = false;
-  volatile boolean scheduleCalled = false;
+  volatile boolean atFixedRateCalled;
+  volatile boolean withFixedDelayCalled;
+  volatile boolean scheduleCalled;
 
   final ScheduledExecutorService executor =
       new ScheduledThreadPoolExecutor(10) {
         @Override
         public ScheduledFuture<?> scheduleWithFixedDelay(
             Runnable command, long initialDelay, long delay, TimeUnit unit) {
-          return future = super.scheduleWithFixedDelay(command, initialDelay, delay, unit);
+          ScheduledFuture<?> result =
+              super.scheduleWithFixedDelay(command, initialDelay, delay, unit);
+          future = result;
+          return result;
         }
       };
 
-  public void testServiceStartStop() throws Exception {
+  public void testServiceStartStop() {
     NullService service = new NullService();
     service.startAsync().awaitRunning();
     assertFalse(future.isDone());
@@ -76,9 +86,9 @@ public class AbstractScheduledServiceTest extends TestCase {
     assertTrue(future.isCancelled());
   }
 
-  private class NullService extends AbstractScheduledService {
+  private final class NullService extends AbstractScheduledService {
     @Override
-    protected void runOneIteration() throws Exception {}
+    protected void runOneIteration() {}
 
     @Override
     protected Scheduler scheduler() {
@@ -91,39 +101,44 @@ public class AbstractScheduledServiceTest extends TestCase {
     }
   }
 
+  private static final class NullAbstractService extends AbstractService {
+    @Override
+    protected void doStart() {
+      notifyStarted();
+    }
+
+    @Override
+    protected void doStop() {
+      notifyStopped();
+    }
+  }
+
   public void testFailOnExceptionFromRun() throws Exception {
     TestService service = new TestService();
     service.runException = new Exception();
     service.startAsync().awaitRunning();
     service.runFirstBarrier.await();
     service.runSecondBarrier.await();
-    try {
-      future.get();
-      fail();
-    } catch (CancellationException expected) {
-    }
+    assertThrows(CancellationException.class, () -> future.get());
     // An execution exception holds a runtime exception (from throwables.propagate) that holds our
     // original exception.
     assertEquals(service.runException, service.failureCause());
-    assertEquals(Service.State.FAILED, service.state());
+    assertThat(service.state()).isEqualTo(Service.State.FAILED);
   }
 
   public void testFailOnExceptionFromStartUp() {
     TestService service = new TestService();
     service.startUpException = new Exception();
-    try {
-      service.startAsync().awaitRunning();
-      fail();
-    } catch (IllegalStateException e) {
-      assertThat(e).hasCauseThat().isEqualTo(service.startUpException);
-    }
+    IllegalStateException e =
+        assertThrows(IllegalStateException.class, () -> service.startAsync().awaitRunning());
+    assertThat(e).hasCauseThat().isEqualTo(service.startUpException);
     assertEquals(0, service.numberOfTimesRunCalled.get());
-    assertEquals(Service.State.FAILED, service.state());
+    assertThat(service.state()).isEqualTo(Service.State.FAILED);
   }
 
   public void testFailOnErrorFromStartUpListener() throws InterruptedException {
-    final Error error = new Error();
-    final CountDownLatch latch = new CountDownLatch(1);
+    Error error = new Error();
+    CountDownLatch latch = new CountDownLatch(1);
     TestService service = new TestService();
     service.addListener(
         new Service.Listener() {
@@ -134,7 +149,7 @@ public class AbstractScheduledServiceTest extends TestCase {
 
           @Override
           public void failed(State from, Throwable failure) {
-            assertEquals(State.RUNNING, from);
+            assertThat(from).isEqualTo(State.RUNNING);
             assertEquals(error, failure);
             latch.countDown();
           }
@@ -144,7 +159,7 @@ public class AbstractScheduledServiceTest extends TestCase {
     latch.await();
 
     assertEquals(0, service.numberOfTimesRunCalled.get());
-    assertEquals(Service.State.FAILED, service.state());
+    assertThat(service.state()).isEqualTo(Service.State.FAILED);
   }
 
   public void testFailOnExceptionFromShutDown() throws Exception {
@@ -154,13 +169,9 @@ public class AbstractScheduledServiceTest extends TestCase {
     service.runFirstBarrier.await();
     service.stopAsync();
     service.runSecondBarrier.await();
-    try {
-      service.awaitTerminated();
-      fail();
-    } catch (IllegalStateException e) {
-      assertThat(e).hasCauseThat().isEqualTo(service.shutDownException);
-    }
-    assertEquals(Service.State.FAILED, service.state());
+    IllegalStateException e = assertThrows(IllegalStateException.class, service::awaitTerminated);
+    assertThat(e).hasCauseThat().isEqualTo(service.shutDownException);
+    assertThat(service.state()).isEqualTo(Service.State.FAILED);
   }
 
   public void testRunOneIterationCalledMultipleTimes() throws Exception {
@@ -196,11 +207,11 @@ public class AbstractScheduledServiceTest extends TestCase {
   }
 
   public void testDefaultExecutorIsShutdownWhenServiceIsStopped() throws Exception {
-    final AtomicReference<ScheduledExecutorService> executor = Atomics.newReference();
+    AtomicReference<ScheduledExecutorService> executor = Atomics.newReference();
     AbstractScheduledService service =
         new AbstractScheduledService() {
           @Override
-          protected void runOneIteration() throws Exception {}
+          protected void runOneIteration() {}
 
           @Override
           protected ScheduledExecutorService executor() {
@@ -223,7 +234,7 @@ public class AbstractScheduledServiceTest extends TestCase {
   }
 
   public void testDefaultExecutorIsShutdownWhenServiceFails() throws Exception {
-    final AtomicReference<ScheduledExecutorService> executor = Atomics.newReference();
+    AtomicReference<ScheduledExecutorService> executor = Atomics.newReference();
     AbstractScheduledService service =
         new AbstractScheduledService() {
           @Override
@@ -232,7 +243,7 @@ public class AbstractScheduledServiceTest extends TestCase {
           }
 
           @Override
-          protected void runOneIteration() throws Exception {}
+          protected void runOneIteration() {}
 
           @Override
           protected ScheduledExecutorService executor() {
@@ -246,11 +257,7 @@ public class AbstractScheduledServiceTest extends TestCase {
           }
         };
 
-    try {
-      service.startAsync().awaitRunning();
-      fail("Expected service to fail during startup");
-    } catch (IllegalStateException expected) {
-    }
+    assertThrows(IllegalStateException.class, () -> service.startAsync().awaitRunning());
 
     assertTrue(executor.get().awaitTermination(100, MILLISECONDS));
   }
@@ -288,42 +295,40 @@ public class AbstractScheduledServiceTest extends TestCase {
           }
 
           @Override
-          protected void runOneIteration() throws Exception {}
+          protected void runOneIteration() {}
 
           @Override
           protected String serviceName() {
             return "Foo";
           }
         };
-    try {
-      service.startAsync().awaitRunning(1, MILLISECONDS);
-      fail("Expected timeout");
-    } catch (TimeoutException e) {
-      assertThat(e)
-          .hasMessageThat()
-          .isEqualTo("Timed out waiting for Foo [STARTING] to reach the RUNNING state.");
-    }
+    TimeoutException e =
+        assertThrows(
+            TimeoutException.class, () -> service.startAsync().awaitRunning(1, MILLISECONDS));
+    assertThat(e)
+        .hasMessageThat()
+        .isEqualTo("Timed out waiting for Foo [STARTING] to reach the RUNNING state.");
   }
 
-  private class TestService extends AbstractScheduledService {
-    CyclicBarrier runFirstBarrier = new CyclicBarrier(2);
-    CyclicBarrier runSecondBarrier = new CyclicBarrier(2);
+  private final class TestService extends AbstractScheduledService {
+    final CyclicBarrier runFirstBarrier = new CyclicBarrier(2);
+    final CyclicBarrier runSecondBarrier = new CyclicBarrier(2);
 
-    volatile boolean startUpCalled = false;
-    volatile boolean shutDownCalled = false;
-    AtomicInteger numberOfTimesRunCalled = new AtomicInteger(0);
-    AtomicInteger numberOfTimesExecutorCalled = new AtomicInteger(0);
-    AtomicInteger numberOfTimesSchedulerCalled = new AtomicInteger(0);
-    volatile @Nullable Exception runException = null;
-    volatile @Nullable Exception startUpException = null;
-    volatile @Nullable Exception shutDownException = null;
+    volatile boolean startUpCalled;
+    volatile boolean shutDownCalled;
+    final AtomicInteger numberOfTimesRunCalled = new AtomicInteger(0);
+    final AtomicInteger numberOfTimesExecutorCalled = new AtomicInteger(0);
+    final AtomicInteger numberOfTimesSchedulerCalled = new AtomicInteger(0);
+    volatile @Nullable Exception runException;
+    volatile @Nullable Exception startUpException;
+    volatile @Nullable Exception shutDownException;
 
     @Override
     protected void runOneIteration() throws Exception {
       assertTrue(startUpCalled);
       assertFalse(shutDownCalled);
       numberOfTimesRunCalled.incrementAndGet();
-      assertEquals(State.RUNNING, state());
+      assertThat(state()).isEqualTo(State.RUNNING);
       runFirstBarrier.await();
       runSecondBarrier.await();
       if (runException != null) {
@@ -336,7 +341,7 @@ public class AbstractScheduledServiceTest extends TestCase {
       assertFalse(startUpCalled);
       assertFalse(shutDownCalled);
       startUpCalled = true;
-      assertEquals(State.STARTING, state());
+      assertThat(state()).isEqualTo(State.STARTING);
       if (startUpException != null) {
         throw startUpException;
       }
@@ -374,12 +379,14 @@ public class AbstractScheduledServiceTest extends TestCase {
   private static final TimeUnit UNIT = MILLISECONDS;
 
   // Unique runnable object used for comparison.
+  @SuppressWarnings("AnonymousToLambda")
   final Runnable testRunnable =
       new Runnable() {
         @Override
         public void run() {}
       };
-  boolean called = false;
+
+  boolean called;
 
   private void assertSingleCallWithCorrectParameters(
       Runnable command, long initialDelay, long delay, TimeUnit unit) {
@@ -387,7 +394,7 @@ public class AbstractScheduledServiceTest extends TestCase {
     called = true;
     assertEquals(INITIAL_DELAY, initialDelay);
     assertEquals(DELAY, delay);
-    assertEquals(UNIT, unit);
+    assertThat(unit).isEqualTo(UNIT);
     assertEquals(testRunnable, command);
   }
 
@@ -395,7 +402,7 @@ public class AbstractScheduledServiceTest extends TestCase {
     Scheduler schedule = Scheduler.newFixedRateSchedule(INITIAL_DELAY, DELAY, UNIT);
     Cancellable unused =
         schedule.schedule(
-            null,
+            new NullAbstractService(),
             new ScheduledThreadPoolExecutor(1) {
               @Override
               public ScheduledFuture<?> scheduleAtFixedRate(
@@ -412,7 +419,7 @@ public class AbstractScheduledServiceTest extends TestCase {
     Scheduler schedule = newFixedDelaySchedule(INITIAL_DELAY, DELAY, UNIT);
     Cancellable unused =
         schedule.schedule(
-            null,
+            new NullAbstractService(),
             new ScheduledThreadPoolExecutor(10) {
               @Override
               public ScheduledFuture<?> scheduleWithFixedDelay(
@@ -443,8 +450,7 @@ public class AbstractScheduledServiceTest extends TestCase {
     }
   }
 
-  public void testFixedDelayScheduleFarFuturePotentiallyOverflowingScheduleIsNeverReached()
-      throws Exception {
+  public void testFixedDelayScheduleFarFuturePotentiallyOverflowingScheduleIsNeverReached() {
     TestAbstractScheduledCustomService service =
         new TestAbstractScheduledCustomService() {
           @Override
@@ -453,71 +459,60 @@ public class AbstractScheduledServiceTest extends TestCase {
           }
         };
     service.startAsync().awaitRunning();
-    try {
-      service.firstBarrier.await(5, SECONDS);
-      fail();
-    } catch (TimeoutException expected) {
-    }
+    assertThrows(TimeoutException.class, () -> service.firstBarrier.await(5, SECONDS));
     assertEquals(0, service.numIterations.get());
     service.stopAsync();
     service.awaitTerminated();
   }
 
-  public void testCustomSchedulerFarFuturePotentiallyOverflowingScheduleIsNeverReached()
-      throws Exception {
+  public void testCustomSchedulerFarFuturePotentiallyOverflowingScheduleIsNeverReached() {
     TestAbstractScheduledCustomService service =
         new TestAbstractScheduledCustomService() {
           @Override
           protected Scheduler scheduler() {
-            return new AbstractScheduledService.CustomScheduler() {
+            return new CustomScheduler() {
               @Override
-              protected Schedule getNextSchedule() throws Exception {
+              protected Schedule getNextSchedule() {
                 return new Schedule(Long.MAX_VALUE, SECONDS);
               }
             };
           }
         };
     service.startAsync().awaitRunning();
-    try {
-      service.firstBarrier.await(5, SECONDS);
-      fail();
-    } catch (TimeoutException expected) {
-    }
+    assertThrows(TimeoutException.class, () -> service.firstBarrier.await(5, SECONDS));
     assertEquals(0, service.numIterations.get());
     service.stopAsync();
     service.awaitTerminated();
   }
 
-  private static class TestCustomScheduler extends AbstractScheduledService.CustomScheduler {
-    public AtomicInteger scheduleCounter = new AtomicInteger(0);
+  private static final class TestCustomScheduler extends AbstractScheduledService.CustomScheduler {
+    final AtomicInteger scheduleCounter = new AtomicInteger(0);
 
     @Override
-    protected Schedule getNextSchedule() throws Exception {
+    protected Schedule getNextSchedule() {
       scheduleCounter.incrementAndGet();
       return new Schedule(0, SECONDS);
     }
   }
 
   public void testCustomSchedule_startStop() throws Exception {
-    final CyclicBarrier firstBarrier = new CyclicBarrier(2);
-    final CyclicBarrier secondBarrier = new CyclicBarrier(2);
-    final AtomicBoolean shouldWait = new AtomicBoolean(true);
+    CyclicBarrier firstBarrier = new CyclicBarrier(2);
+    CyclicBarrier secondBarrier = new CyclicBarrier(2);
+    AtomicBoolean shouldWait = new AtomicBoolean(true);
     Runnable task =
-        new Runnable() {
-          @Override
-          public void run() {
-            try {
-              if (shouldWait.get()) {
-                firstBarrier.await();
-                secondBarrier.await();
-              }
-            } catch (Exception e) {
-              throw new RuntimeException(e);
+        () -> {
+          try {
+            if (shouldWait.get()) {
+              firstBarrier.await();
+              secondBarrier.await();
             }
+          } catch (Exception e) {
+            throw new RuntimeException(e);
           }
         };
     TestCustomScheduler scheduler = new TestCustomScheduler();
-    Cancellable future = scheduler.schedule(null, Executors.newScheduledThreadPool(10), task);
+    Cancellable future =
+        scheduler.schedule(new NullAbstractService(), newScheduledThreadPool(10), task);
     firstBarrier.await();
     assertEquals(1, scheduler.scheduleCounter.get());
     secondBarrier.await();
@@ -542,7 +537,7 @@ public class AbstractScheduledServiceTest extends TestCase {
   }
 
   public void testCustomScheduler_deadlock() throws InterruptedException, BrokenBarrierException {
-    final CyclicBarrier inGetNextSchedule = new CyclicBarrier(2);
+    CyclicBarrier inGetNextSchedule = new CyclicBarrier(2);
     // This will flakily deadlock, so run it multiple times to increase the flake likelihood
     for (int i = 0; i < 1000; i++) {
       Service service =
@@ -554,6 +549,7 @@ public class AbstractScheduledServiceTest extends TestCase {
             protected Scheduler scheduler() {
               return new CustomScheduler() {
                 @Override
+                @SuppressWarnings("ThreadPriorityCheck") // doing our best to test for races
                 protected Schedule getNextSchedule() throws Exception {
                   if (state() != State.STARTING) {
                     inGetNextSchedule.await();
@@ -576,9 +572,10 @@ public class AbstractScheduledServiceTest extends TestCase {
         new TestAbstractScheduledCustomService() {
           @Override
           protected Scheduler scheduler() {
-            return new AbstractScheduledService.CustomScheduler() {
+            return new CustomScheduler() {
               @Override
-              protected Schedule getNextSchedule() throws Exception {
+              @SuppressWarnings("ThreadPriorityCheck") // doing our best to test for races
+              protected Schedule getNextSchedule() {
                 // Explicitly yield to increase the probability of a pathological scheduling.
                 Thread.yield();
                 return new Schedule(0, SECONDS);
@@ -616,14 +613,14 @@ public class AbstractScheduledServiceTest extends TestCase {
     @Override
     protected ScheduledExecutorService executor() {
       // use a bunch of threads so that weird overlapping schedules are more likely to happen.
-      return Executors.newScheduledThreadPool(10);
+      return newScheduledThreadPool(10);
     }
 
     @Override
     protected Scheduler scheduler() {
       return new CustomScheduler() {
         @Override
-        protected Schedule getNextSchedule() throws Exception {
+        protected Schedule getNextSchedule() {
           return new Schedule(DELAY, UNIT);
         }
       };
@@ -639,15 +636,12 @@ public class AbstractScheduledServiceTest extends TestCase {
       service.secondBarrier.await();
     }
     Thread.sleep(1000);
-    try {
-      service.stopAsync().awaitTerminated(100, SECONDS);
-      fail();
-    } catch (IllegalStateException e) {
-      assertEquals(State.FAILED, service.state());
-    }
+    assertThrows(
+        IllegalStateException.class, () -> service.stopAsync().awaitTerminated(100, SECONDS));
+    assertThat(service.state()).isEqualTo(State.FAILED);
   }
 
-  private static class TestFailingCustomScheduledService extends AbstractScheduledService {
+  private static final class TestFailingCustomScheduledService extends AbstractScheduledService {
     final AtomicInteger numIterations = new AtomicInteger(0);
     final CyclicBarrier firstBarrier = new CyclicBarrier(2);
     final CyclicBarrier secondBarrier = new CyclicBarrier(2);
@@ -662,14 +656,14 @@ public class AbstractScheduledServiceTest extends TestCase {
     @Override
     protected ScheduledExecutorService executor() {
       // use a bunch of threads so that weird overlapping schedules are more likely to happen.
-      return Executors.newScheduledThreadPool(10);
+      return newScheduledThreadPool(10);
     }
 
     @Override
     protected Scheduler scheduler() {
       return new CustomScheduler() {
         @Override
-        protected Schedule getNextSchedule() throws Exception {
+        protected Schedule getNextSchedule() {
           if (numIterations.get() > 2) {
             throw new IllegalStateException("Failed");
           }

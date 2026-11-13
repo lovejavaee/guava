@@ -16,6 +16,7 @@
 
 package com.google.common.graph;
 
+import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.graph.GraphConstants.DEFAULT_EDGE_COUNT;
@@ -48,7 +49,6 @@ import java.util.TreeMap;
  * @param <N> Node parameter type
  * @param <E> Edge parameter type
  */
-@ElementTypesAreNonnullByDefault
 class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
   private final boolean isDirected;
   private final boolean allowsParallelEdges;
@@ -66,9 +66,8 @@ class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
   StandardNetwork(NetworkBuilder<? super N, ? super E> builder) {
     this(
         builder,
-        builder.nodeOrder.<N, NetworkConnections<N, E>>createMap(
-            builder.expectedNodeCount.or(DEFAULT_NODE_COUNT)),
-        builder.edgeOrder.<E, N>createMap(builder.expectedEdgeCount.or(DEFAULT_EDGE_COUNT)));
+        builder.nodeOrder.createMap(firstNonNull(builder.expectedNodeCount, DEFAULT_NODE_COUNT)),
+        builder.edgeOrder.createMap(firstNonNull(builder.expectedEdgeCount, DEFAULT_EDGE_COUNT)));
   }
 
   /**
@@ -104,17 +103,17 @@ class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
   }
 
   @Override
-  public boolean isDirected() {
+  public final boolean isDirected() {
     return isDirected;
   }
 
   @Override
-  public boolean allowsParallelEdges() {
+  public final boolean allowsParallelEdges() {
     return allowsParallelEdges;
   }
 
   @Override
-  public boolean allowsSelfLoops() {
+  public final boolean allowsSelfLoops() {
     return allowsSelfLoops;
   }
 
@@ -130,11 +129,11 @@ class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
 
   @Override
   public Set<E> incidentEdges(N node) {
-    return checkedConnections(node).incidentEdges();
+    return nodeInvalidatableSet(checkedConnections(node).incidentEdges(), node);
   }
 
   @Override
-  public EndpointPair<N> incidentNodes(E edge) {
+  public final EndpointPair<N> incidentNodes(E edge) {
     N nodeU = checkedReferenceNode(edge);
     // requireNonNull is safe because checkedReferenceNode made sure the edge is in the network.
     N nodeV = requireNonNull(nodeConnections.get(nodeU)).adjacentNode(edge);
@@ -143,37 +142,40 @@ class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
 
   @Override
   public Set<N> adjacentNodes(N node) {
-    return checkedConnections(node).adjacentNodes();
+    return nodeInvalidatableSet(checkedConnections(node).adjacentNodes(), node);
   }
 
+  @SuppressWarnings("ReferenceEquality") // see comment below
   @Override
   public Set<E> edgesConnecting(N nodeU, N nodeV) {
+    checkNotNull(nodeU);
+    checkNotNull(nodeV);
     NetworkConnections<N, E> connectionsU = checkedConnections(nodeU);
     if (!allowsSelfLoops && nodeU == nodeV) { // just an optimization, only check reference equality
       return ImmutableSet.of();
     }
     checkArgument(containsNode(nodeV), NODE_NOT_IN_GRAPH, nodeV);
-    return connectionsU.edgesConnecting(nodeV);
+    return nodePairInvalidatableSet(connectionsU.edgesConnecting(nodeV), nodeU, nodeV);
   }
 
   @Override
   public Set<E> inEdges(N node) {
-    return checkedConnections(node).inEdges();
+    return nodeInvalidatableSet(checkedConnections(node).inEdges(), node);
   }
 
   @Override
   public Set<E> outEdges(N node) {
-    return checkedConnections(node).outEdges();
+    return nodeInvalidatableSet(checkedConnections(node).outEdges(), node);
   }
 
   @Override
   public Set<N> predecessors(N node) {
-    return checkedConnections(node).predecessors();
+    return nodeInvalidatableSet(checkedConnections(node).predecessors(), node);
   }
 
   @Override
   public Set<N> successors(N node) {
-    return checkedConnections(node).successors();
+    return nodeInvalidatableSet(checkedConnections(node).successors(), node);
   }
 
   final NetworkConnections<N, E> checkedConnections(N node) {
@@ -195,10 +197,12 @@ class StandardNetwork<N, E> extends AbstractNetwork<N, E> {
   }
 
   final boolean containsNode(N node) {
+    checkNotNull(node);
     return nodeConnections.containsKey(node);
   }
 
   final boolean containsEdge(E edge) {
+    checkNotNull(edge);
     return edgeToReferenceNode.containsKey(edge);
   }
 }

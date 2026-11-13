@@ -18,10 +18,9 @@ package com.google.common.collect;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.primitives.Booleans;
-import com.google.common.primitives.Ints;
-import com.google.common.primitives.Longs;
+import com.google.errorprone.annotations.InlineMe;
 import java.util.Comparator;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A utility for performing a chained comparison statement. <b>Note:</b> Java 8+ users should
@@ -29,7 +28,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *
  * <p>Example usage of {@code ComparisonChain}:
  *
- * <pre>{@code
+ * {@snippet :
  * public int compareTo(Foo that) {
  *   return ComparisonChain.start()
  *       .compare(this.aString, that.aString)
@@ -37,7 +36,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *       .compare(this.anEnum, that.anEnum, Ordering.natural().nullsLast())
  *       .result();
  * }
- * }</pre>
+ * }
  *
  * <p>The value of this expression will have the same sign as the <i>first nonzero</i> comparison
  * result in the chain, or will be zero if every comparison result was zero.
@@ -60,7 +59,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * If you are using Java version 8 or greater, you should generally use the static methods in {@link
  * Comparator} instead of {@code ComparisonChain}. The example above can be implemented like this:
  *
- * <pre>{@code
+ * {@snippet :
  * import static java.util.Comparator.comparing;
  * import static java.util.Comparator.nullsLast;
  * import static java.util.Comparator.naturalOrder;
@@ -69,13 +68,13 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *   private static final Comparator<Foo> COMPARATOR =
  *       comparing((Foo foo) -> foo.aString)
  *           .thenComparing(foo -> foo.anInt)
- *           .thenComparing(foo -> foo.anEnum, nullsLast(naturalOrder()));}
+ *           .thenComparing(foo -> foo.anEnum, nullsLast(naturalOrder()));
  *
- *   {@code @Override}{@code
+ *   @Override
  *   public int compareTo(Foo that) {
  *     return COMPARATOR.compare(this, that);
  *   }
- * }</pre>
+ * }
  *
  * <p>With method references it is more succinct: {@code comparing(Foo::aString)} for example.
  *
@@ -91,7 +90,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ComparisonChain {
   private ComparisonChain() {}
 
@@ -116,12 +114,12 @@ public abstract class ComparisonChain {
 
         @Override
         public ComparisonChain compare(int left, int right) {
-          return classify(Ints.compare(left, right));
+          return classify(Integer.compare(left, right));
         }
 
         @Override
         public ComparisonChain compare(long left, long right) {
-          return classify(Longs.compare(left, right));
+          return classify(Long.compare(left, right));
         }
 
         @Override
@@ -136,12 +134,12 @@ public abstract class ComparisonChain {
 
         @Override
         public ComparisonChain compareTrueFirst(boolean left, boolean right) {
-          return classify(Booleans.compare(right, left)); // reversed
+          return classify(Boolean.compare(right, left)); // reversed
         }
 
         @Override
         public ComparisonChain compareFalseFirst(boolean left, boolean right) {
-          return classify(Booleans.compare(left, right));
+          return classify(Boolean.compare(left, right));
         }
 
         ComparisonChain classify(int result) {
@@ -238,13 +236,13 @@ public abstract class ComparisonChain {
       @ParametricNullness T left, @ParametricNullness T right, Comparator<T> comparator);
 
   /**
-   * Compares two {@code int} values as specified by {@link Ints#compare}, <i>if</i> the result of
-   * this comparison chain has not already been determined.
+   * Compares two {@code int} values as specified by {@link Integer#compare}, <i>if</i> the result
+   * of this comparison chain has not already been determined.
    */
   public abstract ComparisonChain compare(int left, int right);
 
   /**
-   * Compares two {@code long} values as specified by {@link Longs#compare}, <i>if</i> the result of
+   * Compares two {@code long} values as specified by {@link Long#compare}, <i>if</i> the result of
    * this comparison chain has not already been determined.
    */
   public abstract ComparisonChain compare(long left, long right);
@@ -268,6 +266,7 @@ public abstract class ComparisonChain {
    *     negated or reversed, undo the negation or reversal and use {@link #compareTrueFirst}.
    * @since 19.0
    */
+  @InlineMe(replacement = "this.compareFalseFirst(left, right)")
   @Deprecated
   public final ComparisonChain compare(Boolean left, Boolean right) {
     return compareFalseFirst(left, right);

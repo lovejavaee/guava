@@ -20,16 +20,18 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Equivalence;
-import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.errorprone.annotations.Immutable;
+import com.google.errorprone.annotations.InlineMe;
 import java.io.Serializable;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.SortedSet;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A range (or "interval") defines the <i>boundaries</i> around a contiguous span of values of some
@@ -37,7 +39,7 @@ import javax.annotation.CheckForNull;
  * possible to <i>iterate</i> over these contained values. To do so, pass this range instance and an
  * appropriate {@link DiscreteDomain} to {@link ContiguousSet#create}.
  *
- * <h3>Types of ranges</h3>
+ * <h2>Types of ranges</h2>
  *
  * <p>Each end of the range may be bounded or unbounded. If bounded, there is an associated
  * <i>endpoint</i> value, and the range is considered to be either <i>open</i> (does not include the
@@ -74,7 +76,7 @@ import javax.annotation.CheckForNull;
  *   <li>{@code (a..a)} : <b>invalid</b>; an exception will be thrown
  * </ul>
  *
- * <h3>Warnings</h3>
+ * <h2>Warnings</h2>
  *
  * <ul>
  *   <li>Use immutable value types only, if at all possible. If you must use a mutable type, <b>do
@@ -90,7 +92,7 @@ import javax.annotation.CheckForNull;
  *       <b>This may change in the future.</b>
  * </ul>
  *
- * <h3>Other notes</h3>
+ * <h2>Other notes</h2>
  *
  * <ul>
  *   <li>All ranges are shallow-immutable.
@@ -109,7 +111,7 @@ import javax.annotation.CheckForNull;
  *   <li>A {@code Range} is serializable if it has no bounds, or if each bound is serializable.
  * </ul>
  *
- * <h3>Further reading</h3>
+ * <h2>Further reading</h2>
  *
  * <p>See the Guava User Guide article on <a
  * href="https://github.com/google/guava/wiki/RangesExplained">{@code Range}</a>.
@@ -119,42 +121,12 @@ import javax.annotation.CheckForNull;
  * @since 10.0
  */
 @GwtCompatible
-@SuppressWarnings("rawtypes")
+@SuppressWarnings("rawtypes") // https://github.com/google/guava/issues/989
 @Immutable(containerOf = "C")
-@ElementTypesAreNonnullByDefault
-public final class Range<C extends Comparable> extends RangeGwtSerializationDependencies
-    implements Predicate<C>, Serializable {
-
-  static class LowerBoundFn implements Function<Range, Cut> {
-    static final LowerBoundFn INSTANCE = new LowerBoundFn();
-
-    @Override
-    public Cut apply(Range range) {
-      return range.lowerBound;
-    }
-  }
-
-  static class UpperBoundFn implements Function<Range, Cut> {
-    static final UpperBoundFn INSTANCE = new UpperBoundFn();
-
-    @Override
-    public Cut apply(Range range) {
-      return range.upperBound;
-    }
-  }
-
+public final class Range<C extends Comparable> implements Predicate<C>, Serializable {
   @SuppressWarnings("unchecked")
-  static <C extends Comparable<?>> Function<Range<C>, Cut<C>> lowerBoundFn() {
-    return (Function) LowerBoundFn.INSTANCE;
-  }
-
-  @SuppressWarnings("unchecked")
-  static <C extends Comparable<?>> Function<Range<C>, Cut<C>> upperBoundFn() {
-    return (Function) UpperBoundFn.INSTANCE;
-  }
-
   static <C extends Comparable<?>> Ordering<Range<C>> rangeLexOrdering() {
-    return (Ordering<Range<C>>) (Ordering) RangeLexOrdering.INSTANCE;
+    return (Ordering<Range<C>>) RangeLexOrdering.INSTANCE;
   }
 
   static <C extends Comparable<?>> Range<C> create(Cut<C> lowerBound, Cut<C> upperBound) {
@@ -236,7 +208,7 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * @since 14.0
    */
   public static <C extends Comparable<?>> Range<C> lessThan(C endpoint) {
-    return create(Cut.<C>belowAll(), Cut.belowValue(endpoint));
+    return create(Cut.belowAll(), Cut.belowValue(endpoint));
   }
 
   /**
@@ -245,7 +217,7 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * @since 14.0
    */
   public static <C extends Comparable<?>> Range<C> atMost(C endpoint) {
-    return create(Cut.<C>belowAll(), Cut.aboveValue(endpoint));
+    return create(Cut.belowAll(), Cut.aboveValue(endpoint));
   }
 
   /**
@@ -260,9 +232,8 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
         return lessThan(endpoint);
       case CLOSED:
         return atMost(endpoint);
-      default:
-        throw new AssertionError();
     }
+    throw new AssertionError();
   }
 
   /**
@@ -271,7 +242,7 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * @since 14.0
    */
   public static <C extends Comparable<?>> Range<C> greaterThan(C endpoint) {
-    return create(Cut.aboveValue(endpoint), Cut.<C>aboveAll());
+    return create(Cut.aboveValue(endpoint), Cut.aboveAll());
   }
 
   /**
@@ -280,7 +251,7 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * @since 14.0
    */
   public static <C extends Comparable<?>> Range<C> atLeast(C endpoint) {
-    return create(Cut.belowValue(endpoint), Cut.<C>aboveAll());
+    return create(Cut.belowValue(endpoint), Cut.aboveAll());
   }
 
   /**
@@ -295,9 +266,8 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
         return greaterThan(endpoint);
       case CLOSED:
         return atLeast(endpoint);
-      default:
-        throw new AssertionError();
     }
+    throw new AssertionError();
   }
 
   private static final Range<Comparable> ALL = new Range<>(Cut.belowAll(), Cut.aboveAll());
@@ -444,9 +414,22 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * @deprecated Provided only to satisfy the {@link Predicate} interface; use {@link #contains}
    *     instead.
    */
+  @InlineMe(replacement = "this.contains(input)")
   @Deprecated
   @Override
   public boolean apply(C input) {
+    return contains(input);
+  }
+
+  /**
+   * @deprecated Provided only to satisfy the {@link java.util.function.Predicate} interface; use
+   *     {@link #contains} instead.
+   * @since 21.0
+   */
+  @InlineMe(replacement = "this.contains(input)")
+  @Deprecated
+  @Override
+  public boolean test(C input) {
     return contains(input);
   }
 
@@ -677,7 +660,7 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
    * {@code [3..3)}, {@code (3..3]}, {@code (4..4]} are all unequal.
    */
   @Override
-  public boolean equals(@CheckForNull Object object) {
+  public boolean equals(@Nullable Object object) {
     if (object instanceof Range) {
       Range<?> other = (Range<?>) object;
       return lowerBound.equals(other.lowerBound) && upperBound.equals(other.upperBound);
@@ -708,6 +691,16 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
     return sb.toString();
   }
 
+  // We declare accessors so that we can use method references like `Range::lowerBound`.
+
+  Cut<C> lowerBound() {
+    return lowerBound;
+  }
+
+  Cut<C> upperBound() {
+    return upperBound;
+  }
+
   Object readResolve() {
     if (this.equals(ALL)) {
       return all();
@@ -722,8 +715,8 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
   }
 
   /** Needed to serialize sorted collections of Ranges. */
-  private static class RangeLexOrdering extends Ordering<Range<?>> implements Serializable {
-    static final Ordering<Range<?>> INSTANCE = new RangeLexOrdering();
+  private static final class RangeLexOrdering extends Ordering<Range<?>> implements Serializable {
+    static final Ordering<?> INSTANCE = new RangeLexOrdering();
 
     @Override
     public int compare(Range<?> left, Range<?> right) {
@@ -733,8 +726,8 @@ public final class Range<C extends Comparable> extends RangeGwtSerializationDepe
           .result();
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

@@ -18,8 +18,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Objects.requireNonNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.io.Serializable;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Utility class for converting between various ASCII case formats. Behavior is undefined for
@@ -29,9 +31,11 @@ import javax.annotation.CheckForNull;
  * @since 1.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public enum CaseFormat {
-  /** Hyphenated variable naming convention, e.g., "lower-hyphen". */
+  /**
+   * Hyphenated variable naming convention, e.g., "lower-hyphen". This format is also colloquially
+   * known as "kebab case".
+   */
   LOWER_HYPHEN(CharMatcher.is('-'), "-") {
     @Override
     String normalizeWord(String word) {
@@ -120,7 +124,7 @@ public enum CaseFormat {
   /**
    * Converts the specified {@code String str} from this format to the specified {@code format}. A
    * "best effort" approach is taken; if {@code str} does not conform to the assumed format, then
-   * the behavior of this method is undefined but we make a reasonable effort at converting anyway.
+   * the behavior of this method is undefined, but we make a reasonable effort at converting anyway.
    */
   public final String to(CaseFormat format, String str) {
     checkNotNull(format);
@@ -182,9 +186,9 @@ public enum CaseFormat {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
-      if (object instanceof StringConverter) {
-        StringConverter that = (StringConverter) object;
+    public boolean equals(@Nullable Object obj) {
+      if (obj instanceof StringConverter) {
+        StringConverter that = (StringConverter) obj;
         return sourceFormat.equals(that.sourceFormat) && targetFormat.equals(that.targetFormat);
       }
       return false;
@@ -192,7 +196,7 @@ public enum CaseFormat {
 
     @Override
     public int hashCode() {
-      return sourceFormat.hashCode() ^ targetFormat.hashCode();
+      return 3 * sourceFormat.hashCode() + targetFormat.hashCode();
     }
 
     @Override
@@ -200,7 +204,7 @@ public enum CaseFormat {
       return sourceFormat + ".converterTo(" + targetFormat + ")";
     }
 
-    private static final long serialVersionUID = 0L;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0L;
   }
 
   abstract String normalizeWord(String word);

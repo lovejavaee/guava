@@ -17,18 +17,18 @@
 package com.google.common.graph;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Iterators.transform;
 import static com.google.common.graph.GraphConstants.INNER_CAPACITY;
 import static com.google.common.graph.GraphConstants.INNER_LOAD_FACTOR;
+import static java.util.Collections.unmodifiableSet;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterators;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An implementation of {@link GraphConnections} for undirected graphs.
@@ -37,7 +37,6 @@ import javax.annotation.CheckForNull;
  * @param <N> Node parameter type
  * @param <V> Value parameter type
  */
-@ElementTypesAreNonnullByDefault
 final class UndirectedGraphConnections<N, V> implements GraphConnections<N, V> {
   private final Map<N, V> adjacentNodeValues;
 
@@ -64,7 +63,7 @@ final class UndirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @Override
   public Set<N> adjacentNodes() {
-    return Collections.unmodifiableSet(adjacentNodeValues.keySet());
+    return unmodifiableSet(adjacentNodeValues.keySet());
   }
 
   @Override
@@ -79,38 +78,43 @@ final class UndirectedGraphConnections<N, V> implements GraphConnections<N, V> {
 
   @Override
   public Iterator<EndpointPair<N>> incidentEdgeIterator(N thisNode) {
-    return Iterators.transform(
+    checkNotNull(thisNode);
+    return transform(
         adjacentNodeValues.keySet().iterator(),
-        (N incidentNode) -> EndpointPair.unordered(thisNode, incidentNode));
+        incidentNode -> EndpointPair.unordered(thisNode, incidentNode));
   }
 
   @Override
-  @CheckForNull
-  public V value(N node) {
+  public @Nullable V value(N node) {
+    checkNotNull(node);
     return adjacentNodeValues.get(node);
   }
 
   @Override
   public void removePredecessor(N node) {
+    checkNotNull(node);
     @SuppressWarnings("unused")
     V unused = removeSuccessor(node);
   }
 
   @Override
-  @CheckForNull
-  public V removeSuccessor(N node) {
+  public @Nullable V removeSuccessor(N node) {
+    checkNotNull(node);
     return adjacentNodeValues.remove(node);
   }
 
   @Override
   public void addPredecessor(N node, V value) {
+    checkNotNull(node);
+    checkNotNull(value);
     @SuppressWarnings("unused")
     V unused = addSuccessor(node, value);
   }
 
   @Override
-  @CheckForNull
-  public V addSuccessor(N node, V value) {
+  public @Nullable V addSuccessor(N node, V value) {
+    checkNotNull(node);
+    checkNotNull(value);
     return adjacentNodeValues.put(node, value);
   }
 }

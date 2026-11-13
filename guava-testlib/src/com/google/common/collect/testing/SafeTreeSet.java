@@ -25,7 +25,7 @@ import java.util.Iterator;
 import java.util.NavigableSet;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A wrapper around {@code TreeSet} that aggressively checks to see if elements are mutually
@@ -37,12 +37,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 public final class SafeTreeSet<E> implements Serializable, NavigableSet<E> {
   @SuppressWarnings("unchecked")
   private static final Comparator<Object> NATURAL_ORDER =
-      new Comparator<Object>() {
-        @Override
-        public int compare(Object o1, Object o2) {
-          return ((Comparable<Object>) o1).compareTo(o2);
-        }
-      };
+      (o1, o2) -> ((Comparable<Object>) o1).compareTo(o2);
 
   private final NavigableSet<E> delegate;
 
@@ -92,14 +87,13 @@ public final class SafeTreeSet<E> implements Serializable, NavigableSet<E> {
     delegate.clear();
   }
 
-  @SuppressWarnings("unchecked")
   @Override
   public Comparator<? super E> comparator() {
     Comparator<? super E> comparator = delegate.comparator();
-    if (comparator == null) {
-      comparator = (Comparator<? super E>) NATURAL_ORDER;
+    if (comparator != null) {
+      return comparator;
     }
-    return comparator;
+    return NATURAL_ORDER;
   }
 
   @Override

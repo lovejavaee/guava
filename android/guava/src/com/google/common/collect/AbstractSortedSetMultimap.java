@@ -16,15 +16,18 @@
 
 package com.google.common.collect;
 
+import static com.google.common.collect.Sets.unmodifiableNavigableSet;
+import static java.util.Collections.unmodifiableSortedSet;
+
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.SortedSet;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Basic implementation of the {@link SortedSetMultimap} interface. It's a wrapper around {@link
@@ -34,7 +37,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Jared Levy
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @Nullable Object>
     extends AbstractSetMultimap<K, V> implements SortedSetMultimap<K, V> {
   /**
@@ -42,7 +44,7 @@ abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @
    *
    * @param map place to store the mapping from each key to its corresponding values
    */
-  protected AbstractSortedSetMultimap(Map<K, Collection<V>> map) {
+  AbstractSortedSetMultimap(Map<K, Collection<V>> map) {
     super(map);
   }
 
@@ -50,22 +52,22 @@ abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @
   abstract SortedSet<V> createCollection();
 
   @Override
-  SortedSet<V> createUnmodifiableEmptyCollection() {
+  final SortedSet<V> createUnmodifiableEmptyCollection() {
     return unmodifiableCollectionSubclass(createCollection());
   }
 
   @Override
-  <E extends @Nullable Object> SortedSet<E> unmodifiableCollectionSubclass(
+  final <E extends @Nullable Object> SortedSet<E> unmodifiableCollectionSubclass(
       Collection<E> collection) {
     if (collection instanceof NavigableSet) {
-      return Sets.unmodifiableNavigableSet((NavigableSet<E>) collection);
+      return unmodifiableNavigableSet((NavigableSet<E>) collection);
     } else {
-      return Collections.unmodifiableSortedSet((SortedSet<E>) collection);
+      return unmodifiableSortedSet((SortedSet<E>) collection);
     }
   }
 
   @Override
-  Collection<V> wrapCollection(@ParametricNullness K key, Collection<V> collection) {
+  final Collection<V> wrapCollection(@ParametricNullness K key, Collection<V> collection) {
     if (collection instanceof NavigableSet) {
       return new WrappedNavigableSet(key, (NavigableSet<V>) collection, null);
     } else {
@@ -99,7 +101,7 @@ abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @
    */
   @CanIgnoreReturnValue
   @Override
-  public SortedSet<V> removeAll(@CheckForNull Object key) {
+  public final SortedSet<V> removeAll(@Nullable Object key) {
     return (SortedSet<V>) super.removeAll(key);
   }
 
@@ -115,7 +117,7 @@ abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @
    */
   @CanIgnoreReturnValue
   @Override
-  public SortedSet<V> replaceValues(@ParametricNullness K key, Iterable<? extends V> values) {
+  public final SortedSet<V> replaceValues(@ParametricNullness K key, Iterable<? extends V> values) {
     return (SortedSet<V>) super.replaceValues(key, values);
   }
 
@@ -143,9 +145,9 @@ abstract class AbstractSortedSetMultimap<K extends @Nullable Object, V extends @
    * comparator.
    */
   @Override
-  public Collection<V> values() {
+  public final Collection<V> values() {
     return super.values();
   }
 
-  private static final long serialVersionUID = 430848587173315748L;
+  @GwtIncompatible @J2ktIncompatible   private static final long serialVersionUID = 430848587173315748L;
 }

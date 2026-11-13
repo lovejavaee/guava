@@ -17,20 +17,21 @@ package com.google.common.hash;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.Immutable;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
- * An abstract composition of multiple hash functions. {@linkplain #newHasher()} delegates to the
- * {@code Hasher} objects of the delegate hash functions, and in the end, they are used by
- * {@linkplain #makeHash(Hasher[])} that constructs the final {@code HashCode}.
+ * An abstract composition of multiple hash functions. {@link #newHasher()} delegates to the {@code
+ * Hasher} objects of the delegate hash functions, and in the end, they are used by {@link
+ * #makeHash(Hasher[])} that constructs the final {@code HashCode}.
  *
  * @author Dimitris Andreou
  */
+@J2ktIncompatible
 @Immutable
-@ElementTypesAreNonnullByDefault
 abstract class AbstractCompositeHashFunction extends AbstractHashFunction {
 
   @SuppressWarnings("Immutable") // array not modified after creation

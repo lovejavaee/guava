@@ -16,15 +16,15 @@
 
 package com.google.common.collect;
 
-import com.google.common.annotations.Beta;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.annotations.GwtCompatible;
-import com.google.common.base.Objects;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.Set;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A multiset which forwards all its method calls to another multiset. Subclasses should override
@@ -49,7 +49,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ForwardingMultiset<E extends @Nullable Object> extends ForwardingCollection<E>
     implements Multiset<E> {
 
@@ -60,7 +59,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
   protected abstract Multiset<E> delegate();
 
   @Override
-  public int count(@CheckForNull Object element) {
+  public int count(@Nullable Object element) {
     return delegate().count(element);
   }
 
@@ -72,7 +71,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
 
   @CanIgnoreReturnValue
   @Override
-  public int remove(@CheckForNull Object element, int occurrences) {
+  public int remove(@Nullable Object element, int occurrences) {
     return delegate().remove(element, occurrences);
   }
 
@@ -87,7 +86,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
   }
 
   @Override
-  public boolean equals(@CheckForNull Object object) {
+  public boolean equals(@Nullable Object object) {
     return object == this || delegate().equals(object);
   }
 
@@ -115,7 +114,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    * @since 7.0
    */
   @Override
-  protected boolean standardContains(@CheckForNull Object object) {
+  protected boolean standardContains(@Nullable Object object) {
     return count(object) > 0;
   }
 
@@ -138,10 +137,9 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    *
    * @since 7.0
    */
-  @Beta
-  protected int standardCount(@CheckForNull Object object) {
+  protected int standardCount(@Nullable Object object) {
     for (Entry<?> entry : this.entrySet()) {
-      if (Objects.equal(entry.getElement(), object)) {
+      if (Objects.equals(entry.getElement(), object)) {
         return entry.getCount();
       }
     }
@@ -167,7 +165,6 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    *
    * @since 7.0
    */
-  @Beta
   @Override
   protected boolean standardAddAll(Collection<? extends E> elementsToAdd) {
     return Multisets.addAllImpl(this, elementsToAdd);
@@ -181,7 +178,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    * @since 7.0
    */
   @Override
-  protected boolean standardRemove(@CheckForNull Object element) {
+  protected boolean standardRemove(@Nullable Object element) {
     return remove(element, 1) > 0;
   }
 
@@ -243,13 +240,12 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    *
    * @since 10.0
    */
-  @Beta
   protected class StandardElementSet extends Multisets.ElementSet<E> {
     /** Constructor for use by subclasses. */
     public StandardElementSet() {}
 
     @Override
-    Multiset<E> multiset() {
+    final Multiset<E> multiset() {
       return ForwardingMultiset.this;
     }
 
@@ -288,7 +284,7 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
    *
    * @since 7.0
    */
-  protected boolean standardEquals(@CheckForNull Object object) {
+  protected boolean standardEquals(@Nullable Object object) {
     return Multisets.equalsImpl(this, object);
   }
 
@@ -313,5 +309,27 @@ public abstract class ForwardingMultiset<E extends @Nullable Object> extends For
   @Override
   protected String standardToString() {
     return entrySet().toString();
+  }
+
+  /**
+   * A simplified version of {@link ForwardingMultiset} where subclasses can pass in an already
+   * constructed {@link Multiset} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingMultiset<E extends @Nullable Object>
+      extends ForwardingMultiset<E> {
+    private final Multiset<E> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingMultiset(Multiset<E> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final Multiset<E> delegate() {
+      return delegate;
+    }
   }
 }

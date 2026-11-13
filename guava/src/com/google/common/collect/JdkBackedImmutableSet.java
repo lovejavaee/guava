@@ -14,19 +14,18 @@
 
 package com.google.common.collect;
 
-import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.util.Set;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * ImmutableSet implementation backed by a JDK HashSet, used to defend against apparent hash
- * flooding. This implementation is never used on the GWT client side, but it must be present there
- * for serialization to work.
+ * flooding. This implementation is never used on the GWT client side.
  *
  * @author Louis Wasserman
  */
-@GwtCompatible(serializable = true)
-@ElementTypesAreNonnullByDefault
+@GwtIncompatible
 final class JdkBackedImmutableSet<E> extends IndexedImmutableSet<E> {
   private final Set<?> delegate;
   private final ImmutableList<E> delegateList;
@@ -42,7 +41,7 @@ final class JdkBackedImmutableSet<E> extends IndexedImmutableSet<E> {
   }
 
   @Override
-  public boolean contains(@CheckForNull Object object) {
+  public boolean contains(@Nullable Object object) {
     return delegate.contains(object);
   }
 
@@ -54,5 +53,13 @@ final class JdkBackedImmutableSet<E> extends IndexedImmutableSet<E> {
   @Override
   public int size() {
     return delegateList.size();
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

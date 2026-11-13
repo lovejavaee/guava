@@ -17,8 +17,11 @@
 package com.google.common.collect;
 
 import static com.google.common.collect.Maps.immutableEntry;
+import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.base.Function;
+import com.google.common.collect.ForwardingNavigableMap.SimpleForwardingNavigableMap;
 import com.google.common.collect.testing.NavigableMapTestSuiteBuilder;
 import com.google.common.collect.testing.SafeTreeMap;
 import com.google.common.collect.testing.TestStringSortedMapGenerator;
@@ -36,10 +39,12 @@ import java.util.NavigableMap;
 import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.TreeMap;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tests for {@code ForwardingNavigableMap}.
@@ -47,26 +52,20 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Robert Konigsberg
  * @author Louis Wasserman
  */
+@NullUnmarked
 public class ForwardingNavigableMapTest extends TestCase {
-  static class StandardImplForwardingNavigableMap<K, V> extends ForwardingNavigableMap<K, V> {
-    private final NavigableMap<K, V> backingMap;
-
+  static class StandardImplForwardingNavigableMap<K, V> extends SimpleForwardingNavigableMap<K, V> {
     StandardImplForwardingNavigableMap(NavigableMap<K, V> backingMap) {
-      this.backingMap = backingMap;
+      super(backingMap);
     }
 
     @Override
-    protected NavigableMap<K, V> delegate() {
-      return backingMap;
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
+    public boolean containsKey(@Nullable Object key) {
       return standardContainsKey(key);
     }
 
     @Override
-    public boolean containsValue(Object value) {
+    public boolean containsValue(@Nullable Object value) {
       return standardContainsValue(value);
     }
 
@@ -76,7 +75,7 @@ public class ForwardingNavigableMapTest extends TestCase {
     }
 
     @Override
-    public @Nullable V remove(Object object) {
+    public @Nullable V remove(@Nullable Object object) {
       return standardRemove(object);
     }
 
@@ -114,7 +113,7 @@ public class ForwardingNavigableMapTest extends TestCase {
       return new StandardEntrySet() {
         @Override
         public Iterator<Entry<K, V>> iterator() {
-          return backingMap.entrySet().iterator();
+          return delegate().entrySet().iterator();
         }
       };
     }
@@ -230,16 +229,10 @@ public class ForwardingNavigableMapTest extends TestCase {
     }
   }
 
-  static class StandardLastEntryForwardingNavigableMap<K, V> extends ForwardingNavigableMap<K, V> {
-    private final NavigableMap<K, V> backingMap;
-
+  static class StandardLastEntryForwardingNavigableMap<K, V>
+      extends SimpleForwardingNavigableMap<K, V> {
     StandardLastEntryForwardingNavigableMap(NavigableMap<K, V> backingMap) {
-      this.backingMap = backingMap;
-    }
-
-    @Override
-    protected NavigableMap<K, V> delegate() {
-      return backingMap;
+      super(backingMap);
     }
 
     @Override
@@ -248,6 +241,7 @@ public class ForwardingNavigableMapTest extends TestCase {
     }
   }
 
+  @AndroidIncompatible // test-suite builders
   public static Test suite() {
     TestSuite suite = new TestSuite();
 
@@ -283,7 +277,8 @@ public class ForwardingNavigableMapTest extends TestCase {
             .suppressing(
                 MapEntrySetTester.getSetValueMethod(),
                 MapEntrySetTester.getSetValueWithNullValuesAbsentMethod(),
-                MapEntrySetTester.getSetValueWithNullValuesPresentMethod())
+                MapEntrySetTester.getSetValueWithNullValuesPresentMethod(),
+                MapEntrySetTester.getIteratorSetValueAndRemove())
             .createTestSuite());
     // TODO(lowasser): add forwarding-to-ImmutableSortedMap test
     return suite;
@@ -292,7 +287,8 @@ public class ForwardingNavigableMapTest extends TestCase {
   public void testStandardLastEntry() {
     NavigableMap<String, Integer> forwarding =
         new StandardLastEntryForwardingNavigableMap<>(new SafeTreeMap<String, Integer>());
-    assertNull(forwarding.lastEntry());
+    assertThat(forwarding.lastEntry()).isNull();
+
     forwarding.put("b", 2);
     assertEquals(immutableEntry("b", 2), forwarding.lastEntry());
     forwarding.put("c", 3);
@@ -301,6 +297,41 @@ public class ForwardingNavigableMapTest extends TestCase {
     assertEquals(immutableEntry("c", 3), forwarding.lastEntry());
     forwarding.remove("c");
     assertEquals(immutableEntry("b", 2), forwarding.lastEntry());
+
+    Entry<String, Integer> entry = forwarding.lastEntry();
+    assertThrows(UnsupportedOperationException.class, () -> entry.setValue(0));
+  }
+
+  public void testStandardPollFirstEntry_twoChildren() {
+    TreeMap<Integer, String> map = new TreeMap<>();
+    map.put(1, "one");
+    map.put(2, "two");
+    map.put(3, "three");
+    NavigableMap<Integer, String> forwarding =
+        new SimpleForwardingNavigableMap<Integer, String>(map.tailMap(2, true)) {
+          @Override
+          public @Nullable Entry<Integer, String> pollFirstEntry() {
+            return standardPollFirstEntry();
+          }
+        };
+    assertThat(forwarding.pollFirstEntry()).isEqualTo(immutableEntry(2, "two"));
+  }
+
+  public void testStandardPollLastEntry_twoChildren() {
+    TreeMap<Integer, String> map = new TreeMap<>();
+    map.put(1, "one");
+    map.put(2, "two");
+    map.put(3, "three");
+    NavigableMap<Integer, String> forwarding =
+        new SimpleForwardingNavigableMap<Integer, String>(map.headMap(2, true)) {
+          @Override
+          public @Nullable Entry<Integer, String> pollLastEntry() {
+            return standardPollLastEntry();
+          }
+        };
+    Entry<Integer, String> entry = forwarding.pollLastEntry();
+    assertThat(entry).isEqualTo(immutableEntry(2, "two"));
+    assertThrows(UnsupportedOperationException.class, () -> entry.setValue("modified"));
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -325,7 +356,7 @@ public class ForwardingNavigableMapTest extends TestCase {
         .testEquals();
   }
 
-  private static <K, V> NavigableMap<K, V> wrap(final NavigableMap<K, V> delegate) {
+  private static <K, V> NavigableMap<K, V> wrap(NavigableMap<K, V> delegate) {
     return new ForwardingNavigableMap<K, V>() {
       @Override
       protected NavigableMap<K, V> delegate() {

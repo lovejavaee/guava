@@ -20,20 +20,26 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Lists.asList;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static com.google.common.util.concurrent.ClosingFuture.withoutCloser;
 import static com.google.common.util.concurrent.Futures.immediateCancelledFuture;
 import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
 import static com.google.common.util.concurrent.Futures.immediateFuture;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import static com.google.common.util.concurrent.MoreExecutors.listeningDecorator;
 import static com.google.common.util.concurrent.MoreExecutors.shutdownAndAwaitTermination;
 import static com.google.common.util.concurrent.Uninterruptibles.awaitUninterruptibly;
 import static com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly;
 import static java.util.Arrays.asList;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.common.reflect.Reflection;
 import com.google.common.truth.FailureStrategy;
@@ -51,11 +57,9 @@ import com.google.common.util.concurrent.ClosingFuture.Combiner3.ClosingFunction
 import com.google.common.util.concurrent.ClosingFuture.Combiner4.ClosingFunction4;
 import com.google.common.util.concurrent.ClosingFuture.Combiner5.ClosingFunction5;
 import com.google.common.util.concurrent.ClosingFuture.DeferredCloser;
-import com.google.common.util.concurrent.ClosingFuture.Peeker;
 import com.google.common.util.concurrent.ClosingFuture.ValueAndCloser;
 import com.google.common.util.concurrent.ClosingFuture.ValueAndCloserConsumer;
 import java.io.Closeable;
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.InvocationHandler;
@@ -73,7 +77,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import junit.framework.TestCase;
-import org.mockito.Mockito;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tests for {@link ClosingFuture}. Subclasses exercise either the {@link
@@ -81,6 +86,9 @@ import org.mockito.Mockito;
  * ClosingFuture#finishToValueAndCloser(ValueAndCloserConsumer, Executor)} paths to complete a
  * {@link ClosingFuture} pipeline.
  */
+@NullUnmarked
+@GwtIncompatible
+@J2ktIncompatible
 public abstract class AbstractClosingFutureTest extends TestCase {
   // TODO(dpb): Use Expect once that supports JUnit 3, or we can use JUnit 4.
   final List<AssertionError> failures = new ArrayList<>();
@@ -93,8 +101,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
             }
           });
 
-  final ListeningExecutorService executor =
-      MoreExecutors.listeningDecorator(newSingleThreadExecutor());
+  final ListeningExecutorService executor = listeningDecorator(newSingleThreadExecutor());
   final ExecutorService closingExecutor = newSingleThreadExecutor();
 
   final TestCloseable closeable1 = new TestCloseable("closeable1");
@@ -105,7 +112,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   final Waiter waiter = new Waiter();
   final CountDownLatch futureCancelled = new CountDownLatch(1);
   final Exception exception = new Exception();
-  final Closeable mockCloseable = Mockito.mock(Closeable.class);
+  final Closeable mockCloseable = mock(Closeable.class);
 
   @Override
   protected void tearDown() throws Exception {
@@ -117,12 +124,9 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture =
         ClosingFuture.from(executor.submit(Callables.returning(closeable1)))
             .transform(
-                new ClosingFunction<TestCloseable, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, TestCloseable v) throws Exception {
-                    assertThat(v).isSameInstanceAs(closeable1);
-                    return "value";
-                  }
+                (DeferredCloser closer, TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable1);
+                  return "value";
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
@@ -130,11 +134,11 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable1);
   }
 
-  public void testFrom_failedInput() throws Exception {
+  public void testFrom_failedInput() {
     assertFinallyFailsWithException(failedClosingFuture());
   }
 
-  public void testFrom_cancelledInput() throws Exception {
+  public void testFrom_cancelledInput() {
     assertBecomesCanceled(ClosingFuture.from(immediateCancelledFuture()));
   }
 
@@ -142,13 +146,10 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture =
         ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor)
             .transform(
-                new ClosingFunction<TestCloseable, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, TestCloseable v) throws Exception {
-                    assertThat(v).isSameInstanceAs(closeable1);
-                    assertStillOpen(closeable1);
-                    return "value";
-                  }
+                (DeferredCloser closer, TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable1);
+                  assertStillOpen(closeable1);
+                  return "value";
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
@@ -156,30 +157,28 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testEventuallyClosing_failedInput() throws Exception {
+  public void testEventuallyClosing_failedInput() {
     assertFinallyFailsWithException(
         ClosingFuture.eventuallyClosing(
             Futures.<Closeable>immediateFailedFuture(exception), closingExecutor));
   }
 
-  public void testEventuallyClosing_cancelledInput() throws Exception {
+  public void testEventuallyClosing_cancelledInput() {
     assertBecomesCanceled(
         ClosingFuture.eventuallyClosing(
             Futures.<Closeable>immediateCancelledFuture(), closingExecutor));
   }
 
-  public void testEventuallyClosing_cancelledPipeline() throws Exception {
+  public void testEventuallyClosing_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.eventuallyClosing(
             executor.submit(
                 waiter.waitFor(
-                    new Callable<TestCloseable>() {
-                      @Override
-                      public TestCloseable call() throws InterruptedException {
-                        awaitUninterruptibly(futureCancelled);
-                        return closeable1;
-                      }
-                    })),
+                    (Callable<TestCloseable>)
+                        () -> {
+                          awaitUninterruptibly(futureCancelled);
+                          return closeable1;
+                        })),
             closingExecutor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -189,39 +188,29 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testEventuallyClosing_throws() throws Exception {
+  public void testEventuallyClosing_throws() {
     assertFinallyFailsWithException(
         ClosingFuture.eventuallyClosing(
-            executor.submit(
-                new Callable<TestCloseable>() {
-                  @Override
-                  public TestCloseable call() throws Exception {
-                    throw exception;
-                  }
-                }),
+            executor.submit(() -> {
+              throw exception;
+            }),
             closingExecutor));
   }
 
   public void testSubmit() throws Exception {
     ClosingFuture<String> closingFuture =
         ClosingFuture.submit(
-                new ClosingCallable<TestCloseable>() {
-                  @Override
-                  public TestCloseable call(DeferredCloser closer) throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable3;
-                  }
+                closer -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable3;
                 },
                 executor)
             .transform(
-                new ClosingFunction<TestCloseable, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, TestCloseable v) throws Exception {
-                    assertThat(v).isSameInstanceAs(closeable3);
-                    assertStillOpen(closeable1, closeable2, closeable3);
-                    return "value";
-                  }
+                (DeferredCloser closer, TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable3);
+                  assertStillOpen(closeable1, closeable2, closeable3);
+                  return "value";
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
@@ -230,19 +219,17 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testSubmit_cancelledPipeline() throws Exception {
+  public void testSubmit_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.submit(
             waiter.waitFor(
-                new ClosingCallable<TestCloseable>() {
-                  @Override
-                  public TestCloseable call(DeferredCloser closer) throws Exception {
-                    awaitUninterruptibly(futureCancelled);
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable3;
-                  }
-                }),
+                (ClosingCallable<TestCloseable>)
+                    closer -> {
+                      awaitUninterruptibly(futureCancelled);
+                      closer.eventuallyClose(closeable1, closingExecutor);
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return closeable3;
+                    }),
             executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -251,16 +238,13 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testSubmit_throws() throws Exception {
+  public void testSubmit_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.submit(
-            new ClosingCallable<Object>() {
-              @Override
-              public Object call(DeferredCloser closer) throws Exception {
-                closer.eventuallyClose(closeable1, closingExecutor);
-                closer.eventuallyClose(closeable2, closingExecutor);
-                throw exception;
-              }
+            closer -> {
+              closer.eventuallyClose(closeable1, closingExecutor);
+              closer.eventuallyClose(closeable2, closingExecutor);
+              throw exception;
             },
             executor);
     assertFinallyFailsWithException(closingFuture);
@@ -271,19 +255,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   public void testSubmitAsync() throws Exception {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.submitAsync(
-            new AsyncClosingCallable<TestCloseable>() {
-              @Override
-              public ClosingFuture<TestCloseable> call(DeferredCloser closer) {
-                closer.eventuallyClose(closeable1, closingExecutor);
-                return ClosingFuture.submit(
-                    new ClosingCallable<TestCloseable>() {
-                      @Override
-                      public TestCloseable call(DeferredCloser deferredCloser) throws Exception {
-                        return closeable2;
-                      }
-                    },
-                    directExecutor());
-              }
+            closer -> {
+              closer.eventuallyClose(closeable1, closingExecutor);
+              return ClosingFuture.submit(
+                  new ClosingCallable<TestCloseable>() {
+                    @Override
+                    public TestCloseable call(DeferredCloser deferredCloser) {
+                      return closeable2;
+                    }
+                  },
+                  directExecutor());
             },
             executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
@@ -292,28 +273,25 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable2);
   }
 
-  public void testSubmitAsync_cancelledPipeline() throws Exception {
+  public void testSubmitAsync_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.submitAsync(
             waiter.waitFor(
-                new AsyncClosingCallable<TestCloseable>() {
-                  @Override
-                  public ClosingFuture<TestCloseable> call(DeferredCloser closer) throws Exception {
-                    awaitUninterruptibly(futureCancelled);
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return ClosingFuture.submit(
-                        new ClosingCallable<TestCloseable>() {
-                          @Override
-                          public TestCloseable call(DeferredCloser deferredCloser)
-                              throws Exception {
-                            deferredCloser.eventuallyClose(closeable3, closingExecutor);
-                            return closeable3;
-                          }
-                        },
-                        directExecutor());
-                  }
-                }),
+                (AsyncClosingCallable<TestCloseable>)
+                    closer -> {
+                      awaitUninterruptibly(futureCancelled);
+                      closer.eventuallyClose(closeable1, closingExecutor);
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return ClosingFuture.submit(
+                          new ClosingCallable<TestCloseable>() {
+                            @Override
+                            public TestCloseable call(DeferredCloser deferredCloser) {
+                              deferredCloser.eventuallyClose(closeable3, closingExecutor);
+                              return closeable3;
+                            }
+                          },
+                          directExecutor());
+                    }),
             executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -321,16 +299,13 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testSubmitAsync_throws() throws Exception {
+  public void testSubmitAsync_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.submitAsync(
-            new AsyncClosingCallable<Object>() {
-              @Override
-              public ClosingFuture<Object> call(DeferredCloser closer) throws Exception {
-                closer.eventuallyClose(closeable1, closingExecutor);
-                closer.eventuallyClose(closeable2, closingExecutor);
-                throw exception;
-              }
+            closer -> {
+              closer.eventuallyClose(closeable1, closingExecutor);
+              closer.eventuallyClose(closeable2, closingExecutor);
+              throw exception;
             },
             executor);
     assertFinallyFailsWithException(closingFuture);
@@ -338,17 +313,23 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testStatusFuture() throws Exception {
+  public void testAutoCloseable() throws Exception {
+    AutoCloseable autoCloseable = closeable1::close;
     ClosingFuture<String> closingFuture =
         ClosingFuture.submit(
-            waiter.waitFor(
-                new ClosingCallable<String>() {
-                  @Override
-                  public String call(DeferredCloser closer) throws Exception {
-                    return "value";
-                  }
-                }),
+            closer -> {
+              closer.eventuallyClose(autoCloseable, closingExecutor);
+              return "foo";
+            },
             executor);
+    assertThat(getFinalValue(closingFuture)).isEqualTo("foo");
+    waitUntilClosed(closingFuture);
+    assertClosed(closeable1);
+  }
+
+  public void testStatusFuture() throws Exception {
+    ClosingFuture<String> closingFuture =
+        ClosingFuture.submit(waiter.waitFor((ClosingCallable<String>) closer -> "value"), executor);
     ListenableFuture<?> statusFuture = closingFuture.statusFuture();
     waiter.awaitStarted();
     assertThat(statusFuture.isDone()).isFalse();
@@ -356,16 +337,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertThat(getUninterruptibly(statusFuture)).isNull();
   }
 
-  public void testStatusFuture_failure() throws Exception {
+  public void testStatusFuture_failure() {
     ClosingFuture<String> closingFuture =
         ClosingFuture.submit(
             waiter.waitFor(
-                new ClosingCallable<String>() {
-                  @Override
-                  public String call(DeferredCloser closer) throws Exception {
-                    throw exception;
-                  }
-                }),
+                (ClosingCallable<String>)
+                    closer -> {
+                      throw exception;
+                    }),
             executor);
     ListenableFuture<?> statusFuture = closingFuture.statusFuture();
     waiter.awaitStarted();
@@ -376,15 +355,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
 
   public void testStatusFuture_cancelDoesNothing() throws Exception {
     ClosingFuture<String> closingFuture =
-        ClosingFuture.submit(
-            waiter.waitFor(
-                new ClosingCallable<String>() {
-                  @Override
-                  public String call(DeferredCloser closer) throws Exception {
-                    return "value";
-                  }
-                }),
-            executor);
+        ClosingFuture.submit(waiter.waitFor((ClosingCallable<String>) closer -> "value"), executor);
     ListenableFuture<?> statusFuture = closingFuture.statusFuture();
     waiter.awaitStarted();
     assertThat(statusFuture.isDone()).isFalse();
@@ -398,34 +369,26 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> step0 = ClosingFuture.from(immediateFuture("value 0"));
     ClosingFuture<String> step1 =
         step0.transform(
-            new ClosingFunction<String, String>() {
-              @Override
-              public String apply(DeferredCloser closer, String v) throws Exception {
-                closer.eventuallyClose(closeable1, closingExecutor);
-                return "value 1";
-              }
+            (DeferredCloser closer, String v) -> {
+              closer.eventuallyClose(closeable1, closingExecutor);
+              return "value 1";
             },
             executor);
     Waiter step2Waiter = new Waiter();
     ClosingFuture<String> step2 =
         step1.transform(
             step2Waiter.waitFor(
-                new ClosingFunction<String, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, String v) throws Exception {
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return "value 2";
-                  }
-                }),
+                (ClosingFunction<String, String>)
+                    (DeferredCloser closer, String v) -> {
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return "value 2";
+                    }),
             executor);
     ClosingFuture<String> step3 =
         step2.transform(
-            new ClosingFunction<String, String>() {
-              @Override
-              public String apply(DeferredCloser closer, String input) throws Exception {
-                closer.eventuallyClose(closeable3, closingExecutor);
-                return "value 3";
-              }
+            (DeferredCloser closer, String input) -> {
+              closer.eventuallyClose(closeable3, closingExecutor);
+              return "value 3";
             },
             executor);
     Waiter step4Waiter = new Waiter();
@@ -433,14 +396,11 @@ public abstract class AbstractClosingFutureTest extends TestCase {
         step3.catching(
             CancellationException.class,
             step4Waiter.waitFor(
-                new ClosingFunction<CancellationException, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, CancellationException input)
-                      throws Exception {
-                    closer.eventuallyClose(closeable4, closingExecutor);
-                    return "value 4";
-                  }
-                }),
+                (ClosingFunction<CancellationException, String>)
+                    (DeferredCloser closer, CancellationException input) -> {
+                      closer.eventuallyClose(closeable4, closingExecutor);
+                      return "value 4";
+                    }),
             executor);
 
     // Pause in step 2.
@@ -496,23 +456,17 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transform(
-                new ClosingFunction<String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(DeferredCloser closer, String v) throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable3;
-                  }
+                (DeferredCloser closer, String v) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable3;
                 },
                 executor)
             .transform(
-                new ClosingFunction<TestCloseable, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, TestCloseable v) throws Exception {
-                    assertThat(v).isSameInstanceAs(closeable3);
-                    assertStillOpen(closeable1, closeable2, closeable3);
-                    return "value";
-                  }
+                (DeferredCloser closer, TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable3);
+                  assertStillOpen(closeable1, closeable2, closeable3);
+                  return "value";
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
@@ -521,30 +475,23 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testTransform_cancelledPipeline() throws Exception {
+  public void testTransform_cancelledPipeline() {
     String value = "value";
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.from(immediateFuture(value))
             .transform(
-                new ClosingFunction<String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(DeferredCloser closer, String v) throws Exception {
-                    return closer.eventuallyClose(closeable1, closingExecutor);
-                  }
-                },
+                (DeferredCloser closer, String v) ->
+                    closer.eventuallyClose(closeable1, closingExecutor),
                 executor)
             .transform(
                 waiter.waitFor(
-                    new ClosingFunction<TestCloseable, TestCloseable>() {
-                      @Override
-                      public TestCloseable apply(DeferredCloser closer, TestCloseable v)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        closer.eventuallyClose(closeable3, closingExecutor);
-                        return closeable4;
-                      }
-                    }),
+                    (ClosingFunction<TestCloseable, TestCloseable>)
+                        (DeferredCloser closer, TestCloseable v) -> {
+                          awaitUninterruptibly(futureCancelled);
+                          closer.eventuallyClose(closeable2, closingExecutor);
+                          closer.eventuallyClose(closeable3, closingExecutor);
+                          return closeable4;
+                        }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -553,17 +500,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable4);
   }
 
-  public void testTransform_throws() throws Exception {
+  public void testTransform_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transform(
-                new ClosingFunction<String, Object>() {
-                  @Override
-                  public Object apply(DeferredCloser closer, String v) throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer, String v) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -575,25 +519,18 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transformAsync(
-                new AsyncClosingFunction<String, TestCloseable>() {
-                  @Override
-                  public ClosingFuture<TestCloseable> apply(DeferredCloser closer, String v)
-                      throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return ClosingFuture.eventuallyClosing(
-                        immediateFuture(closeable3), closingExecutor);
-                  }
+                (DeferredCloser closer, String v) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return ClosingFuture.eventuallyClosing(
+                      immediateFuture(closeable3), closingExecutor);
                 },
                 executor)
             .transform(
-                new ClosingFunction<TestCloseable, String>() {
-                  @Override
-                  public String apply(DeferredCloser closer, TestCloseable v) throws Exception {
-                    assertThat(v).isSameInstanceAs(closeable3);
-                    assertStillOpen(closeable1, closeable2, closeable3);
-                    return "value";
-                  }
+                (DeferredCloser closer, TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable3);
+                  assertStillOpen(closeable1, closeable2, closeable3);
+                  return "value";
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
@@ -601,22 +538,19 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testTransformAsync_cancelledPipeline() throws Exception {
+  public void testTransformAsync_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transformAsync(
                 waiter.waitFor(
-                    new AsyncClosingFunction<String, TestCloseable>() {
-                      @Override
-                      public ClosingFuture<TestCloseable> apply(DeferredCloser closer, String v)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return ClosingFuture.eventuallyClosing(
-                            immediateFuture(closeable3), closingExecutor);
-                      }
-                    }),
+                    (AsyncClosingFunction<String, TestCloseable>)
+                        (DeferredCloser closer, String v) -> {
+                          awaitUninterruptibly(futureCancelled);
+                          closer.eventuallyClose(closeable1, closingExecutor);
+                          closer.eventuallyClose(closeable2, closingExecutor);
+                          return ClosingFuture.eventuallyClosing(
+                              immediateFuture(closeable3), closingExecutor);
+                        }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -626,18 +560,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testTransformAsync_throws() throws Exception {
+  public void testTransformAsync_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transformAsync(
-                new AsyncClosingFunction<String, Object>() {
-                  @Override
-                  public ClosingFuture<Object> apply(DeferredCloser closer, String v)
-                      throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer, String v) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -645,18 +575,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testTransformAsync_failed() throws Exception {
+  public void testTransformAsync_failed() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.from(immediateFuture("value"))
             .transformAsync(
-                new AsyncClosingFunction<String, Object>() {
-                  @Override
-                  public ClosingFuture<Object> apply(DeferredCloser closer, String v)
-                      throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return failedClosingFuture();
-                  }
+                (DeferredCloser closer, String v) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return failedClosingFuture();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -667,23 +593,13 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   public void testTransformAsync_withoutCloser() throws Exception {
     ClosingFuture<String> closingFuture =
         ClosingFuture.submit(
-                new ClosingCallable<TestCloseable>() {
-                  @Override
-                  public TestCloseable call(DeferredCloser closer) throws Exception {
-                    return closer.eventuallyClose(closeable1, closingExecutor);
-                  }
-                },
-                executor)
+                closer -> closer.eventuallyClose(closeable1, closingExecutor), executor)
             .transformAsync(
-                ClosingFuture.withoutCloser(
-                    new AsyncFunction<TestCloseable, String>() {
-                      @Override
-                      public ListenableFuture<String> apply(TestCloseable v) throws Exception {
-                        assertThat(v).isSameInstanceAs(closeable1);
-                        assertStillOpen(closeable1);
-                        return immediateFuture("value");
-                      }
-                    }),
+                withoutCloser((TestCloseable v) -> {
+                  assertThat(v).isSameInstanceAs(closeable1);
+                  assertStillOpen(closeable1);
+                  return immediateFuture("value");
+                }),
                 executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo("value");
     waitUntilClosed(closingFuture);
@@ -691,45 +607,30 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   }
 
   public void testWhenAllComplete_call() throws Exception {
-    final ClosingFuture<String> input1 = ClosingFuture.from(immediateFuture("value1"));
-    final ClosingFuture<Object> input2Failed = failedClosingFuture();
-    final ClosingFuture<String> nonInput = ClosingFuture.from(immediateFuture("value3"));
-    final AtomicReference<ClosingFuture.Peeker> capturedPeeker = new AtomicReference<>();
+    ClosingFuture<String> input1 = ClosingFuture.from(immediateFuture("value1"));
+    ClosingFuture<Object> input2Failed = failedClosingFuture();
+    ClosingFuture<String> nonInput = ClosingFuture.from(immediateFuture("value3"));
+    AtomicReference<ClosingFuture.Peeker> capturedPeeker = new AtomicReference<>();
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllComplete(ImmutableList.of(input1, input2Failed))
             .call(
-                new CombiningCallable<TestCloseable>() {
-                  @Override
-                  public TestCloseable call(DeferredCloser closer, Peeker peeker) throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    assertThat(peeker.getDone(input1)).isSameInstanceAs("value1");
-                    try {
-                      peeker.getDone(input2Failed);
-                      fail("Peeker.getDone() should fail for failed inputs");
-                    } catch (ExecutionException expected) {
-                    }
-                    try {
-                      peeker.getDone(nonInput);
-                      fail("Peeker should not be able to peek into non-input ClosingFuture.");
-                    } catch (IllegalArgumentException expected) {
-                    }
-                    capturedPeeker.set(peeker);
-                    return closeable2;
-                  }
+                (closer, peeker) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  assertThat(peeker.getDone(input1)).isSameInstanceAs("value1");
+                  assertThrows(ExecutionException.class, () -> peeker.getDone(input2Failed));
+                  assertThrows(IllegalArgumentException.class, () -> peeker.getDone(nonInput));
+                  capturedPeeker.set(peeker);
+                  return closeable2;
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
     waitUntilClosed(closingFuture);
     assertStillOpen(closeable2);
     assertClosed(closeable1);
-    try {
-      capturedPeeker.get().getDone(input1);
-      fail("Peeker should not be able to peek except during call.");
-    } catch (IllegalStateException expected) {
-    }
+    assertThrows(IllegalStateException.class, () -> capturedPeeker.get().getDone(input1));
   }
 
-  public void testWhenAllComplete_call_cancelledPipeline() throws Exception {
+  public void testWhenAllComplete_call_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllComplete(
                 ImmutableList.of(
@@ -737,15 +638,12 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                     ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor)))
             .call(
                 waiter.waitFor(
-                    new CombiningCallable<TestCloseable>() {
-                      @Override
-                      public TestCloseable call(DeferredCloser closer, Peeker peeker)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        return closeable3;
-                      }
-                    }),
+                    (CombiningCallable<TestCloseable>)
+                        (closer, peeker) -> {
+                          awaitUninterruptibly(futureCancelled);
+                          closer.eventuallyClose(closeable1, closingExecutor);
+                          return closeable3;
+                        }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -754,19 +652,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testWhenAllComplete_call_throws() throws Exception {
+  public void testWhenAllComplete_call_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllComplete(
                 ImmutableList.of(
                     ClosingFuture.from(immediateFuture(closeable1)),
                     ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor)))
             .call(
-                new CombiningCallable<Object>() {
-                  @Override
-                  public Object call(DeferredCloser closer, Peeker peeker) throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (closer, peeker) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -776,46 +671,30 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   }
 
   public void testWhenAllComplete_callAsync() throws Exception {
-    final ClosingFuture<String> input1 = ClosingFuture.from(immediateFuture("value1"));
-    final ClosingFuture<Object> input2Failed = failedClosingFuture();
-    final ClosingFuture<String> nonInput = ClosingFuture.from(immediateFuture("value3"));
-    final AtomicReference<ClosingFuture.Peeker> capturedPeeker = new AtomicReference<>();
+    ClosingFuture<String> input1 = ClosingFuture.from(immediateFuture("value1"));
+    ClosingFuture<Object> input2Failed = failedClosingFuture();
+    ClosingFuture<String> nonInput = ClosingFuture.from(immediateFuture("value3"));
+    AtomicReference<ClosingFuture.Peeker> capturedPeeker = new AtomicReference<>();
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllComplete(ImmutableList.of(input1, input2Failed))
             .callAsync(
-                new AsyncCombiningCallable<TestCloseable>() {
-                  @Override
-                  public ClosingFuture<TestCloseable> call(DeferredCloser closer, Peeker peeker)
-                      throws Exception {
-                    closer.eventuallyClose(closeable1, closingExecutor);
-                    assertThat(peeker.getDone(input1)).isSameInstanceAs("value1");
-                    try {
-                      peeker.getDone(input2Failed);
-                      fail("Peeker should fail for failed inputs");
-                    } catch (ExecutionException expected) {
-                    }
-                    try {
-                      peeker.getDone(nonInput);
-                      fail("Peeker should not be able to peek into non-input ClosingFuture.");
-                    } catch (IllegalArgumentException expected) {
-                    }
-                    capturedPeeker.set(peeker);
-                    return ClosingFuture.eventuallyClosing(
-                        immediateFuture(closeable2), closingExecutor);
-                  }
+                (closer, peeker) -> {
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  assertThat(peeker.getDone(input1)).isSameInstanceAs("value1");
+                  assertThrows(ExecutionException.class, () -> peeker.getDone(input2Failed));
+                  assertThrows(IllegalArgumentException.class, () -> peeker.getDone(nonInput));
+                  capturedPeeker.set(peeker);
+                  return ClosingFuture.eventuallyClosing(
+                      immediateFuture(closeable2), closingExecutor);
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
     waitUntilClosed(closingFuture);
     assertClosed(closeable1, closeable2);
-    try {
-      capturedPeeker.get().getDone(input1);
-      fail("Peeker should not be able to peek except during call.");
-    } catch (IllegalStateException expected) {
-    }
+    assertThrows(IllegalStateException.class, () -> capturedPeeker.get().getDone(input1));
   }
 
-  public void testWhenAllComplete_callAsync_cancelledPipeline() throws Exception {
+  public void testWhenAllComplete_callAsync_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllComplete(
                 ImmutableList.of(
@@ -823,16 +702,13 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                     ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor)))
             .callAsync(
                 waiter.waitFor(
-                    new AsyncCombiningCallable<TestCloseable>() {
-                      @Override
-                      public ClosingFuture<TestCloseable> call(DeferredCloser closer, Peeker peeker)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        return ClosingFuture.eventuallyClosing(
-                            immediateFuture(closeable3), closingExecutor);
-                      }
-                    }),
+                    (AsyncCombiningCallable<TestCloseable>)
+                        (closer, peeker) -> {
+                          awaitUninterruptibly(futureCancelled);
+                          closer.eventuallyClose(closeable1, closingExecutor);
+                          return ClosingFuture.eventuallyClosing(
+                              immediateFuture(closeable3), closingExecutor);
+                        }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -840,20 +716,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testWhenAllComplete_callAsync_throws() throws Exception {
+  public void testWhenAllComplete_callAsync_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllComplete(
                 ImmutableList.of(
                     ClosingFuture.from(immediateFuture(closeable1)),
                     ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor)))
             .callAsync(
-                new AsyncCombiningCallable<Object>() {
-                  @Override
-                  public ClosingFuture<Object> call(DeferredCloser closer, Peeker peeker)
-                      throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (closer, peeker) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -865,55 +737,44 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   // We don't need to test the happy case for SuccessfulCombiner.call(Async) because it's the same
   // as Combiner.
 
-  public void testWhenAllSucceed_call_failedInput() throws Exception {
+  public void testWhenAllSucceed_call_failedInput() {
     assertFinallyFailsWithException(
         ClosingFuture.whenAllSucceed(
                 ImmutableList.of(
                     ClosingFuture.from(immediateFuture("value")), failedClosingFuture()))
             .call(
-                new CombiningCallable<Object>() {
-                  @Override
-                  public Object call(DeferredCloser closer, Peeker peeker) throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (closer, peeker) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor));
   }
 
-  public void testWhenAllSucceed_callAsync_failedInput() throws Exception {
+  public void testWhenAllSucceed_callAsync_failedInput() {
     assertFinallyFailsWithException(
         ClosingFuture.whenAllSucceed(
                 ImmutableList.of(
                     ClosingFuture.from(immediateFuture("value")), failedClosingFuture()))
             .callAsync(
-                new AsyncCombiningCallable<Object>() {
-                  @Override
-                  public ClosingFuture<Object> call(DeferredCloser closer, Peeker peeker)
-                      throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (closer, peeker) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor));
   }
 
-  public void testWhenAllSucceed2_call() throws ExecutionException, IOException {
+  public void testWhenAllSucceed2_call() throws ExecutionException {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 ClosingFuture.from(immediateFuture("value1")))
             .call(
-                new ClosingFunction2<TestCloseable, String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(DeferredCloser closer, TestCloseable v1, String v2)
-                      throws Exception {
-                    assertThat(v1).isEqualTo(closeable1);
-                    assertThat(v2).isEqualTo("value1");
-                    assertStillOpen(closeable1);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable2;
-                  }
+                (DeferredCloser closer, TestCloseable v1, String v2) -> {
+                  assertThat(v1).isEqualTo(closeable1);
+                  assertThat(v2).isEqualTo("value1");
+                  assertStillOpen(closeable1);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable2;
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
@@ -921,19 +782,15 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testWhenAllSucceed2_call_failedInput() throws ExecutionException, IOException {
+  public void testWhenAllSucceed2_call_failedInput() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 failedClosingFuture())
             .call(
-                new ClosingFunction2<TestCloseable, Object, Object>() {
-                  @Override
-                  public Object apply(DeferredCloser closer, TestCloseable v1, Object v2)
-                      throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (DeferredCloser closer, TestCloseable v1, Object v2) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -941,24 +798,18 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testWhenAllSucceed2_call_cancelledPipeline() throws Exception {
+  public void testWhenAllSucceed2_call_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
                 ClosingFuture.from(immediateFuture(closeable2)))
             .call(
-                waiter.waitFor(
-                    new ClosingFunction2<TestCloseable, TestCloseable, TestCloseable>() {
-                      @Override
-                      public TestCloseable apply(
-                          DeferredCloser closer, TestCloseable v1, TestCloseable v2)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return closeable3;
-                      }
-                    }),
+                waiter.waitFor((DeferredCloser closer, TestCloseable v1, TestCloseable v2) -> {
+                  awaitUninterruptibly(futureCancelled);
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable3;
+                }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -969,19 +820,15 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testWhenAllSucceed2_call_throws() throws Exception {
+  public void testWhenAllSucceed2_call_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor))
             .call(
-                new ClosingFunction2<TestCloseable, TestCloseable, Object>() {
-                  @Override
-                  public Object apply(DeferredCloser closer, TestCloseable v1, TestCloseable v2)
-                      throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer, TestCloseable v1, TestCloseable v2) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -990,23 +837,19 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed2_callAsync() throws ExecutionException, IOException {
+  public void testWhenAllSucceed2_callAsync() throws ExecutionException {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 ClosingFuture.from(immediateFuture("value1")))
             .callAsync(
-                new AsyncClosingFunction2<TestCloseable, String, TestCloseable>() {
-                  @Override
-                  public ClosingFuture<TestCloseable> apply(
-                      DeferredCloser closer, TestCloseable v1, String v2) throws Exception {
-                    assertThat(v1).isEqualTo(closeable1);
-                    assertThat(v2).isEqualTo("value1");
-                    assertStillOpen(closeable1);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return ClosingFuture.eventuallyClosing(
-                        immediateFuture(closeable3), closingExecutor);
-                  }
+                (DeferredCloser closer, TestCloseable v1, String v2) -> {
+                  assertThat(v1).isEqualTo(closeable1);
+                  assertThat(v2).isEqualTo("value1");
+                  assertStillOpen(closeable1);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return ClosingFuture.eventuallyClosing(
+                      immediateFuture(closeable3), closingExecutor);
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable3);
@@ -1014,19 +857,15 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed2_callAsync_failedInput() throws ExecutionException, IOException {
+  public void testWhenAllSucceed2_callAsync_failedInput() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 failedClosingFuture())
             .callAsync(
-                new AsyncClosingFunction2<TestCloseable, Object, Object>() {
-                  @Override
-                  public ClosingFuture<Object> apply(
-                      DeferredCloser closer, TestCloseable v1, Object v2) throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (DeferredCloser closer, TestCloseable v1, Object v2) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1034,25 +873,19 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testWhenAllSucceed2_callAsync_cancelledPipeline() throws Exception {
+  public void testWhenAllSucceed2_callAsync_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
                 ClosingFuture.from(immediateFuture(closeable2)))
             .callAsync(
-                waiter.waitFor(
-                    new AsyncClosingFunction2<TestCloseable, TestCloseable, TestCloseable>() {
-                      @Override
-                      public ClosingFuture<TestCloseable> apply(
-                          DeferredCloser closer, TestCloseable v1, TestCloseable v2)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return ClosingFuture.eventuallyClosing(
-                            immediateFuture(closeable3), closingExecutor);
-                      }
-                    }),
+                waiter.waitFor((DeferredCloser closer, TestCloseable v1, TestCloseable v2) -> {
+                  awaitUninterruptibly(futureCancelled);
+                  closer.eventuallyClose(closeable1, closingExecutor);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return ClosingFuture.eventuallyClosing(
+                      immediateFuture(closeable3), closingExecutor);
+                }),
                 executor);
     waiter.awaitStarted();
     cancelFinalStepAndWait(closingFuture);
@@ -1062,19 +895,15 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed2_callAsync_throws() throws Exception {
+  public void testWhenAllSucceed2_callAsync_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor))
             .callAsync(
-                new AsyncClosingFunction2<TestCloseable, TestCloseable, Object>() {
-                  @Override
-                  public ClosingFuture<Object> apply(
-                      DeferredCloser closer, TestCloseable v1, TestCloseable v2) throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer, TestCloseable v1, TestCloseable v2) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1083,25 +912,20 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed3_call() throws ExecutionException, IOException {
+  public void testWhenAllSucceed3_call() throws ExecutionException {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 ClosingFuture.from(immediateFuture("value2")),
                 ClosingFuture.from(immediateFuture("value3")))
             .call(
-                new ClosingFunction3<TestCloseable, String, String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(
-                      DeferredCloser closer, TestCloseable v1, String v2, String v3)
-                      throws Exception {
-                    assertThat(v1).isEqualTo(closeable1);
-                    assertThat(v2).isEqualTo("value2");
-                    assertThat(v3).isEqualTo("value3");
-                    assertStillOpen(closeable1);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable2;
-                  }
+                (DeferredCloser closer, TestCloseable v1, String v2, String v3) -> {
+                  assertThat(v1).isEqualTo(closeable1);
+                  assertThat(v2).isEqualTo("value2");
+                  assertThat(v3).isEqualTo("value3");
+                  assertStillOpen(closeable1);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable2;
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
@@ -1109,20 +933,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testWhenAllSucceed3_call_failedInput() throws ExecutionException, IOException {
+  public void testWhenAllSucceed3_call_failedInput() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
                 failedClosingFuture(),
                 ClosingFuture.from(immediateFuture("value3")))
             .call(
-                new ClosingFunction3<TestCloseable, Object, String, Object>() {
-                  @Override
-                  public Object apply(DeferredCloser closer, TestCloseable v1, Object v2, String v3)
-                      throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (DeferredCloser closer, TestCloseable v1, Object v2, String v3) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1130,7 +950,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testWhenAllSucceed3_call_cancelledPipeline() throws Exception {
+  public void testWhenAllSucceed3_call_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
@@ -1138,16 +958,11 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value3")))
             .call(
                 waiter.waitFor(
-                    new ClosingFunction3<TestCloseable, TestCloseable, String, TestCloseable>() {
-                      @Override
-                      public TestCloseable apply(
-                          DeferredCloser closer, TestCloseable v1, TestCloseable v2, String v3)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return closeable3;
-                      }
+                    (DeferredCloser closer, TestCloseable v1, TestCloseable v2, String v3) -> {
+                      awaitUninterruptibly(futureCancelled);
+                      closer.eventuallyClose(closeable1, closingExecutor);
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return closeable3;
                     }),
                 executor);
     waiter.awaitStarted();
@@ -1159,21 +974,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testWhenAllSucceed3_call_throws() throws Exception {
+  public void testWhenAllSucceed3_call_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable2), closingExecutor),
                 ClosingFuture.from(immediateFuture("value3")))
             .call(
-                new ClosingFunction3<TestCloseable, TestCloseable, String, Object>() {
-                  @Override
-                  public Object apply(
-                      DeferredCloser closer, TestCloseable v1, TestCloseable v2, String v3)
-                      throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer, TestCloseable v1, TestCloseable v2, String v3) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1182,7 +992,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed4_call() throws ExecutionException, IOException {
+  public void testWhenAllSucceed4_call() throws ExecutionException {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
@@ -1190,19 +1000,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value3")),
                 ClosingFuture.from(immediateFuture("value4")))
             .call(
-                new ClosingFunction4<TestCloseable, String, String, String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(
-                      DeferredCloser closer, TestCloseable v1, String v2, String v3, String v4)
-                      throws Exception {
-                    assertThat(v1).isEqualTo(closeable1);
-                    assertThat(v2).isEqualTo("value2");
-                    assertThat(v3).isEqualTo("value3");
-                    assertThat(v4).isEqualTo("value4");
-                    assertStillOpen(closeable1);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable2;
-                  }
+                (DeferredCloser closer, TestCloseable v1, String v2, String v3, String v4) -> {
+                  assertThat(v1).isEqualTo(closeable1);
+                  assertThat(v2).isEqualTo("value2");
+                  assertThat(v3).isEqualTo("value3");
+                  assertThat(v4).isEqualTo("value4");
+                  assertStillOpen(closeable1);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable2;
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
@@ -1210,7 +1015,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testWhenAllSucceed4_call_failedInput() throws ExecutionException, IOException {
+  public void testWhenAllSucceed4_call_failedInput() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
@@ -1218,14 +1023,9 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value3")),
                 ClosingFuture.from(immediateFuture("value4")))
             .call(
-                new ClosingFunction4<TestCloseable, Object, String, String, Object>() {
-                  @Override
-                  public Object apply(
-                      DeferredCloser closer, TestCloseable v1, Object v2, String v3, String v4)
-                      throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (DeferredCloser closer, TestCloseable v1, Object v2, String v3, String v4) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1233,7 +1033,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testWhenAllSucceed4_call_cancelledPipeline() throws Exception {
+  public void testWhenAllSucceed4_call_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
@@ -1242,21 +1042,15 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value4")))
             .call(
                 waiter.waitFor(
-                    new ClosingFunction4<
-                        TestCloseable, TestCloseable, String, String, TestCloseable>() {
-                      @Override
-                      public TestCloseable apply(
-                          DeferredCloser closer,
-                          TestCloseable v1,
-                          TestCloseable v2,
-                          String v3,
-                          String v4)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return closeable3;
-                      }
+                    (DeferredCloser closer,
+                        TestCloseable v1,
+                        TestCloseable v2,
+                        String v3,
+                        String v4) -> {
+                      awaitUninterruptibly(futureCancelled);
+                      closer.eventuallyClose(closeable1, closingExecutor);
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return closeable3;
                     }),
                 executor);
     waiter.awaitStarted();
@@ -1268,7 +1062,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testWhenAllSucceed4_call_throws() throws Exception {
+  public void testWhenAllSucceed4_call_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
@@ -1276,18 +1070,13 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value3")),
                 ClosingFuture.from(immediateFuture("value4")))
             .call(
-                new ClosingFunction4<TestCloseable, TestCloseable, String, String, Object>() {
-                  @Override
-                  public Object apply(
-                      DeferredCloser closer,
-                      TestCloseable v1,
-                      TestCloseable v2,
-                      String v3,
-                      String v4)
-                      throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer,
+                    TestCloseable v1,
+                    TestCloseable v2,
+                    String v3,
+                    String v4) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1296,7 +1085,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable2, closeable3);
   }
 
-  public void testWhenAllSucceed5_call() throws ExecutionException, IOException {
+  public void testWhenAllSucceed5_call() throws ExecutionException {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
@@ -1305,26 +1094,20 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value4")),
                 ClosingFuture.from(immediateFuture("value5")))
             .call(
-                new ClosingFunction5<
-                    TestCloseable, String, String, String, String, TestCloseable>() {
-                  @Override
-                  public TestCloseable apply(
-                      DeferredCloser closer,
-                      TestCloseable v1,
-                      String v2,
-                      String v3,
-                      String v4,
-                      String v5)
-                      throws Exception {
-                    assertThat(v1).isEqualTo(closeable1);
-                    assertThat(v2).isEqualTo("value2");
-                    assertThat(v3).isEqualTo("value3");
-                    assertThat(v4).isEqualTo("value4");
-                    assertThat(v5).isEqualTo("value5");
-                    assertStillOpen(closeable1);
-                    closer.eventuallyClose(closeable2, closingExecutor);
-                    return closeable2;
-                  }
+                (DeferredCloser closer,
+                    TestCloseable v1,
+                    String v2,
+                    String v3,
+                    String v4,
+                    String v5) -> {
+                  assertThat(v1).isEqualTo(closeable1);
+                  assertThat(v2).isEqualTo("value2");
+                  assertThat(v3).isEqualTo("value3");
+                  assertThat(v4).isEqualTo("value4");
+                  assertThat(v5).isEqualTo("value5");
+                  assertStillOpen(closeable1);
+                  closer.eventuallyClose(closeable2, closingExecutor);
+                  return closeable2;
                 },
                 executor);
     assertThat(getFinalValue(closingFuture)).isSameInstanceAs(closeable2);
@@ -1332,7 +1115,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1, closeable2);
   }
 
-  public void testWhenAllSucceed5_call_failedInput() throws ExecutionException, IOException {
+  public void testWhenAllSucceed5_call_failedInput() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.eventuallyClosing(immediateFuture(closeable1), closingExecutor),
@@ -1341,19 +1124,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value4")),
                 ClosingFuture.from(immediateFuture("value5")))
             .call(
-                new ClosingFunction5<TestCloseable, Object, String, String, String, Object>() {
-                  @Override
-                  public Object apply(
-                      DeferredCloser closer,
-                      TestCloseable v1,
-                      Object v2,
-                      String v3,
-                      String v4,
-                      String v5)
-                      throws Exception {
-                    expect.fail();
-                    throw new AssertionError();
-                  }
+                (DeferredCloser closer,
+                    TestCloseable v1,
+                    Object v2,
+                    String v3,
+                    String v4,
+                    String v5) -> {
+                  expect.fail();
+                  throw new AssertionError();
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1361,7 +1139,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertClosed(closeable1);
   }
 
-  public void testWhenAllSucceed5_call_cancelledPipeline() throws Exception {
+  public void testWhenAllSucceed5_call_cancelledPipeline() {
     ClosingFuture<TestCloseable> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
@@ -1371,22 +1149,16 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value5")))
             .call(
                 waiter.waitFor(
-                    new ClosingFunction5<
-                        TestCloseable, TestCloseable, String, String, String, TestCloseable>() {
-                      @Override
-                      public TestCloseable apply(
-                          DeferredCloser closer,
-                          TestCloseable v1,
-                          TestCloseable v2,
-                          String v3,
-                          String v4,
-                          String v5)
-                          throws Exception {
-                        awaitUninterruptibly(futureCancelled);
-                        closer.eventuallyClose(closeable1, closingExecutor);
-                        closer.eventuallyClose(closeable2, closingExecutor);
-                        return closeable3;
-                      }
+                    (DeferredCloser closer,
+                        TestCloseable v1,
+                        TestCloseable v2,
+                        String v3,
+                        String v4,
+                        String v5) -> {
+                      awaitUninterruptibly(futureCancelled);
+                      closer.eventuallyClose(closeable1, closingExecutor);
+                      closer.eventuallyClose(closeable2, closingExecutor);
+                      return closeable3;
                     }),
                 executor);
     waiter.awaitStarted();
@@ -1398,7 +1170,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertStillOpen(closeable3);
   }
 
-  public void testWhenAllSucceed5_call_throws() throws Exception {
+  public void testWhenAllSucceed5_call_throws() {
     ClosingFuture<Object> closingFuture =
         ClosingFuture.whenAllSucceed(
                 ClosingFuture.from(immediateFuture(closeable1)),
@@ -1407,20 +1179,14 @@ public abstract class AbstractClosingFutureTest extends TestCase {
                 ClosingFuture.from(immediateFuture("value4")),
                 ClosingFuture.from(immediateFuture("value5")))
             .call(
-                new ClosingFunction5<
-                    TestCloseable, TestCloseable, String, String, String, Object>() {
-                  @Override
-                  public Object apply(
-                      DeferredCloser closer,
-                      TestCloseable v1,
-                      TestCloseable v2,
-                      String v3,
-                      String v4,
-                      String v5)
-                      throws Exception {
-                    closer.eventuallyClose(closeable3, closingExecutor);
-                    throw exception;
-                  }
+                (DeferredCloser closer,
+                    TestCloseable v1,
+                    TestCloseable v2,
+                    String v3,
+                    String v4,
+                    String v5) -> {
+                  closer.eventuallyClose(closeable3, closingExecutor);
+                  throw exception;
                 },
                 executor);
     assertFinallyFailsWithException(closingFuture);
@@ -1431,15 +1197,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
 
   public void testTransform_preventsFurtherOperations() {
     ClosingFuture<String> closingFuture = ClosingFuture.from(immediateFuture("value1"));
-    ClosingFuture<String> unused =
-        closingFuture.transform(
-            new ClosingFunction<String, String>() {
-              @Override
-              public String apply(DeferredCloser closer, String v) throws Exception {
-                return "value2";
-              }
-            },
-            executor);
+    ClosingFuture<String> unused = closingFuture.transform((closer, v) -> "value2", executor);
     assertDerivingThrowsIllegalStateException(closingFuture);
     assertFinalStepThrowsIllegalStateException(closingFuture);
   }
@@ -1448,13 +1206,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture = ClosingFuture.from(immediateFuture("value1"));
     ClosingFuture<String> unused =
         closingFuture.transformAsync(
-            new AsyncClosingFunction<String, String>() {
-              @Override
-              public ClosingFuture<String> apply(DeferredCloser closer, String v) throws Exception {
-                return ClosingFuture.from(immediateFuture("value2"));
-              }
-            },
-            executor);
+            (closer, v) -> ClosingFuture.from(immediateFuture("value2")), executor);
     assertDerivingThrowsIllegalStateException(closingFuture);
     assertFinalStepThrowsIllegalStateException(closingFuture);
   }
@@ -1462,15 +1214,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   public void testCatching_preventsFurtherOperations() {
     ClosingFuture<String> closingFuture = ClosingFuture.from(immediateFuture("value1"));
     ClosingFuture<String> unused =
-        closingFuture.catching(
-            Exception.class,
-            new ClosingFunction<Exception, String>() {
-              @Override
-              public String apply(DeferredCloser closer, Exception x) throws Exception {
-                return "value2";
-              }
-            },
-            executor);
+        closingFuture.catching(Exception.class, (closer, x) -> "value2", executor);
     assertDerivingThrowsIllegalStateException(closingFuture);
     assertFinalStepThrowsIllegalStateException(closingFuture);
   }
@@ -1479,15 +1223,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     ClosingFuture<String> closingFuture = ClosingFuture.from(immediateFuture("value1"));
     ClosingFuture<String> unused =
         closingFuture.catchingAsync(
-            Exception.class,
-            ClosingFuture.withoutCloser(
-                new AsyncFunction<Exception, String>() {
-                  @Override
-                  public ListenableFuture<String> apply(Exception x) throws Exception {
-                    return immediateFuture("value2");
-                  }
-                }),
-            executor);
+            Exception.class, withoutCloser(x -> immediateFuture("value2")), executor);
     assertDerivingThrowsIllegalStateException(closingFuture);
     assertFinalStepThrowsIllegalStateException(closingFuture);
   }
@@ -1506,83 +1242,39 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     assertFinalStepThrowsIllegalStateException(closingFuture);
   }
 
-  protected final void assertDerivingThrowsIllegalStateException(
-      ClosingFuture<String> closingFuture) {
-    try {
-      closingFuture.transform(
-          new ClosingFunction<String, String>() {
-            @Override
-            public String apply(DeferredCloser closer3, String v1) throws Exception {
-              return "value3";
-            }
-          },
-          executor);
-      fail();
-    } catch (IllegalStateException expected5) {
-    }
-    try {
-      closingFuture.transformAsync(
-          new AsyncClosingFunction<String, String>() {
-            @Override
-            public ClosingFuture<String> apply(DeferredCloser closer2, String v) throws Exception {
-              return ClosingFuture.from(immediateFuture("value3"));
-            }
-          },
-          executor);
-      fail();
-    } catch (IllegalStateException expected4) {
-    }
-    try {
-      closingFuture.catching(
-          Exception.class,
-          new ClosingFunction<Exception, String>() {
-            @Override
-            public String apply(DeferredCloser closer1, Exception x1) throws Exception {
-              return "value3";
-            }
-          },
-          executor);
-      fail();
-    } catch (IllegalStateException expected3) {
-    }
-    try {
-      closingFuture.catchingAsync(
-          Exception.class,
-          new AsyncClosingFunction<Exception, String>() {
-            @Override
-            public ClosingFuture<String> apply(DeferredCloser closer, Exception x)
-                throws Exception {
-              return ClosingFuture.from(immediateFuture("value3"));
-            }
-          },
-          executor);
-      fail();
-    } catch (IllegalStateException expected2) {
-    }
-    try {
-      ClosingFuture.whenAllComplete(asList(closingFuture));
-      fail();
-    } catch (IllegalStateException expected1) {
-    }
-    try {
-      ClosingFuture.whenAllSucceed(asList(closingFuture));
-      fail();
-    } catch (IllegalStateException expected) {
-    }
+  final void assertDerivingThrowsIllegalStateException(ClosingFuture<String> closingFuture) {
+    assertThrows(
+        IllegalStateException.class,
+        () -> closingFuture.transform((closer3, v1) -> "value3", executor));
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            closingFuture.transformAsync(
+                (closer2, v) -> ClosingFuture.from(immediateFuture("value3")), executor));
+    assertThrows(
+        IllegalStateException.class,
+        () -> closingFuture.catching(Exception.class, (closer1, x1) -> "value3", executor));
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            closingFuture.catchingAsync(
+                Exception.class,
+                (closer, x) -> ClosingFuture.from(immediateFuture("value3")),
+                executor));
+    assertThrows(
+        IllegalStateException.class, () -> ClosingFuture.whenAllComplete(asList(closingFuture)));
+    assertThrows(
+        IllegalStateException.class, () -> ClosingFuture.whenAllSucceed(asList(closingFuture)));
   }
 
   /** Asserts that marking this step a final step throws {@link IllegalStateException}. */
-  protected void assertFinalStepThrowsIllegalStateException(ClosingFuture<?> closingFuture) {
-    try {
-      closingFuture.finishToFuture();
-      fail();
-    } catch (IllegalStateException expected) {
-    }
-    try {
-      closingFuture.finishToValueAndCloser(new NoOpValueAndCloserConsumer<>(), executor);
-      fail();
-    } catch (IllegalStateException expected) {
-    }
+  private void assertFinalStepThrowsIllegalStateException(ClosingFuture<?> closingFuture) {
+    assertThrows(IllegalStateException.class, () -> closingFuture.finishToFuture());
+
+    NoOpValueAndCloserConsumer<Object> consumer = new NoOpValueAndCloserConsumer<>();
+    assertThrows(
+        IllegalStateException.class,
+        () -> closingFuture.finishToValueAndCloser(consumer, executor));
   }
 
   // Avoid infinite recursion if a closeable's close() method throws RejectedExecutionException and
@@ -1591,13 +1283,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     doThrow(new RejectedExecutionException()).when(mockCloseable).close();
     ClosingFuture<Closeable> closingFuture =
         ClosingFuture.submit(
-            new ClosingCallable<Closeable>() {
-              @Override
-              public Closeable call(DeferredCloser closer) throws Exception {
-                return closer.eventuallyClose(mockCloseable, directExecutor());
-              }
-            },
-            executor);
+            closer -> closer.eventuallyClose(mockCloseable, directExecutor()), executor);
     assertThat(getFinalValue(closingFuture)).isEqualTo(mockCloseable);
     waitUntilClosed(closingFuture);
     verify(mockCloseable, timeout(1000)).close();
@@ -1621,7 +1307,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   abstract void assertFinallyFailsWithException(ClosingFuture<?> closingFuture);
 
   /** Waits for the given step to be canceled. */
-  abstract void assertBecomesCanceled(ClosingFuture<?> closingFuture) throws ExecutionException;
+  abstract void assertBecomesCanceled(ClosingFuture<?> closingFuture);
 
   /** Waits for the given step's closeables to be closed. */
   void waitUntilClosed(ClosingFuture<?> closingFuture) {
@@ -1629,31 +1315,21 @@ public abstract class AbstractClosingFutureTest extends TestCase {
   }
 
   void assertThatFutureFailsWithException(Future<?> future) {
-    try {
-      getUninterruptibly(future);
-      fail("Expected future to fail: " + future);
-    } catch (ExecutionException e) {
-      assertThat(e).hasCauseThat().isSameInstanceAs(exception);
-    }
+    ExecutionException e = assertThrows(ExecutionException.class, () -> getUninterruptibly(future));
+    assertThat(e).hasCauseThat().isEqualTo(exception);
   }
 
-  static void assertThatFutureBecomesCancelled(Future<?> future) throws ExecutionException {
-    try {
-      getUninterruptibly(future);
-      fail("Expected future to be canceled: " + future);
-    } catch (CancellationException expected) {
-    }
+  static void assertThatFutureBecomesCancelled(Future<?> future) {
+    assertThrows(CancellationException.class, () -> getUninterruptibly(future));
   }
 
-  private static void assertStillOpen(TestCloseable closeable1, TestCloseable... moreCloseables)
-      throws IOException {
+  private static void assertStillOpen(TestCloseable closeable1, TestCloseable... moreCloseables) {
     for (TestCloseable closeable : asList(closeable1, moreCloseables)) {
       assertWithMessage("%s.stillOpen()", closeable).that(closeable.stillOpen()).isTrue();
     }
   }
 
-  static void assertClosed(TestCloseable closeable1, TestCloseable... moreCloseables)
-      throws IOException {
+  static void assertClosed(TestCloseable closeable1, TestCloseable... moreCloseables) {
     for (TestCloseable closeable : asList(closeable1, moreCloseables)) {
       assertWithMessage("%s.isClosed()", closeable).that(closeable.awaitClosed()).isTrue();
     }
@@ -1691,7 +1367,7 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
       latch.countDown();
     }
 
@@ -1713,68 +1389,82 @@ public abstract class AbstractClosingFutureTest extends TestCase {
     private final CountDownLatch started = new CountDownLatch(1);
     private final CountDownLatch canReturn = new CountDownLatch(1);
     private final CountDownLatch returned = new CountDownLatch(1);
-    private Object proxy;
+    private @Nullable Object proxy;
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V> Callable<V> waitFor(Callable<V> callable) {
       return waitFor(callable, Callable.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V> ClosingCallable<V> waitFor(ClosingCallable<V> closingCallable) {
       return waitFor(closingCallable, ClosingCallable.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V> AsyncClosingCallable<V> waitFor(AsyncClosingCallable<V> asyncClosingCallable) {
       return waitFor(asyncClosingCallable, AsyncClosingCallable.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <T, U> ClosingFunction<T, U> waitFor(ClosingFunction<T, U> closingFunction) {
       return waitFor(closingFunction, ClosingFunction.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <T, U> AsyncClosingFunction<T, U> waitFor(AsyncClosingFunction<T, U> asyncClosingFunction) {
       return waitFor(asyncClosingFunction, AsyncClosingFunction.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V> CombiningCallable<V> waitFor(CombiningCallable<V> combiningCallable) {
       return waitFor(combiningCallable, CombiningCallable.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V> AsyncCombiningCallable<V> waitFor(AsyncCombiningCallable<V> asyncCombiningCallable) {
       return waitFor(asyncCombiningCallable, AsyncCombiningCallable.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V1, V2, U> ClosingFunction2<V1, V2, U> waitFor(ClosingFunction2<V1, V2, U> closingFunction2) {
       return waitFor(closingFunction2, ClosingFunction2.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V1, V2, U> AsyncClosingFunction2<V1, V2, U> waitFor(
         AsyncClosingFunction2<V1, V2, U> asyncClosingFunction2) {
       return waitFor(asyncClosingFunction2, AsyncClosingFunction2.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V1, V2, V3, U> ClosingFunction3<V1, V2, V3, U> waitFor(
         ClosingFunction3<V1, V2, V3, U> closingFunction3) {
       return waitFor(closingFunction3, ClosingFunction3.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V1, V2, V3, V4, U> ClosingFunction4<V1, V2, V3, V4, U> waitFor(
         ClosingFunction4<V1, V2, V3, V4, U> closingFunction4) {
       return waitFor(closingFunction4, ClosingFunction4.class);
     }
 
+    @SuppressWarnings("unchecked") // proxy for a generic class
     <V1, V2, V3, V4, V5, U> ClosingFunction5<V1, V2, V3, V4, V5, U> waitFor(
         ClosingFunction5<V1, V2, V3, V4, V5, U> closingFunction5) {
       return waitFor(closingFunction5, ClosingFunction5.class);
     }
 
-    <T> T waitFor(final T delegate, final Class<T> type) {
+    <T> T waitFor(T delegate, Class<T> type) {
       checkState(proxy == null);
       T proxyObject =
           Reflection.newProxy(
               type,
               new InvocationHandler() {
                 @Override
-                public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                public @Nullable Object invoke(
+                    Object proxy, Method method, @Nullable Object @Nullable [] args)
+                    throws Throwable {
                   if (!method.getDeclaringClass().equals(type)) {
                     return method.invoke(delegate, args);
                   }

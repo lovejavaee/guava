@@ -15,8 +15,9 @@
 package com.google.common.cache;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.Callable;
@@ -38,13 +39,14 @@ import java.util.concurrent.ExecutionException;
  * @since 10.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class AbstractCache<K, V> implements Cache<K, V> {
 
   /** Constructor for use by subclasses. */
   protected AbstractCache() {}
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   public V get(K key, Callable<? extends V> valueLoader) throws ExecutionException {
     throw new UnsupportedOperationException();
@@ -65,7 +67,7 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
    */
   @Override
   public ImmutableMap<K, V> getAllPresent(Iterable<? extends Object> keys) {
-    Map<K, V> result = Maps.newLinkedHashMap();
+    Map<K, V> result = new LinkedHashMap<>();
     for (Object key : keys) {
       if (!result.containsKey(key)) {
         @SuppressWarnings("unchecked")
@@ -79,13 +81,17 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
     return ImmutableMap.copyOf(result);
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   public void put(K key, V value) {
     throw new UnsupportedOperationException();
   }
 
-  /** @since 12.0 */
+  /**
+   * @since 12.0
+   */
   @Override
   public void putAll(Map<? extends K, ? extends V> m) {
     for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
@@ -106,7 +112,9 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
     throw new UnsupportedOperationException();
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   // For discussion of <? extends Object>, see getAllPresent.
   public void invalidateAll(Iterable<? extends Object> keys) {
@@ -126,6 +134,7 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
   }
 
   @Override
+  @J2ktIncompatible // Thread safety complexity
   public ConcurrentMap<K, V> asMap() {
     throw new UnsupportedOperationException();
   }
@@ -197,6 +206,13 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
   /**
    * A thread-safe {@link StatsCounter} implementation for use by {@link Cache} implementors.
    *
+   * <p>Each counter is updated atomically, but the counters are not updated together: For
+   * performance, this class does not lock, so a {@link #snapshot} taken concurrently with updates
+   * may reflect only part of an update. For example, it may include the increment of the
+   * load-success count from a call to {@link #recordLoadSuccess} but not the corresponding load
+   * time. As a result, values derived from a snapshot, like {@link CacheStats#averageLoadPenalty},
+   * may be briefly inconsistent.
+   *
    * @since 10.0
    */
   public static final class SimpleStatsCounter implements StatsCounter {
@@ -210,13 +226,17 @@ public abstract class AbstractCache<K, V> implements Cache<K, V> {
     /** Constructs an instance with all counts initialized to zero. */
     public SimpleStatsCounter() {}
 
-    /** @since 11.0 */
+    /**
+     * @since 11.0
+     */
     @Override
     public void recordHits(int count) {
       hitCount.add(count);
     }
 
-    /** @since 11.0 */
+    /**
+     * @since 11.0
+     */
     @Override
     public void recordMisses(int count) {
       missCount.add(count);

@@ -15,6 +15,7 @@
 package com.google.common.cache;
 
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ForwardingObject;
 import com.google.common.collect.ImmutableMap;
@@ -22,7 +23,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A cache which forwards all its method calls to another cache. Subclasses should override one or
@@ -33,7 +34,7 @@ import javax.annotation.CheckForNull;
  * @since 10.0
  */
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
+@J2ktIncompatible // Compiles fine, but hidden for safety because the tests have not been ported
 public abstract class ForwardingCache<K, V> extends ForwardingObject implements Cache<K, V> {
 
   /** Constructor for use by subclasses. */
@@ -42,20 +43,25 @@ public abstract class ForwardingCache<K, V> extends ForwardingObject implements 
   @Override
   protected abstract Cache<K, V> delegate();
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
-  @CheckForNull
-  public V getIfPresent(Object key) {
+  public @Nullable V getIfPresent(Object key) {
     return delegate().getIfPresent(key);
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   public V get(K key, Callable<? extends V> valueLoader) throws ExecutionException {
     return delegate().get(key, valueLoader);
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   /*
    * <? extends Object> is mostly the same as <?> to plain Java. But to nullness checkers, they
@@ -65,13 +71,17 @@ public abstract class ForwardingCache<K, V> extends ForwardingObject implements 
     return delegate().getAllPresent(keys);
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   public void put(K key, V value) {
     delegate().put(key, value);
   }
 
-  /** @since 12.0 */
+  /**
+   * @since 12.0
+   */
   @Override
   public void putAll(Map<? extends K, ? extends V> m) {
     delegate().putAll(m);
@@ -82,7 +92,9 @@ public abstract class ForwardingCache<K, V> extends ForwardingObject implements 
     delegate().invalidate(key);
   }
 
-  /** @since 11.0 */
+  /**
+   * @since 11.0
+   */
   @Override
   // For discussion of <? extends Object>, see getAllPresent.
   public void invalidateAll(Iterable<? extends Object> keys) {
@@ -123,6 +135,7 @@ public abstract class ForwardingCache<K, V> extends ForwardingObject implements 
   public abstract static class SimpleForwardingCache<K, V> extends ForwardingCache<K, V> {
     private final Cache<K, V> delegate;
 
+    /** Constructor for use by subclasses. */
     protected SimpleForwardingCache(Cache<K, V> delegate) {
       this.delegate = Preconditions.checkNotNull(delegate);
     }

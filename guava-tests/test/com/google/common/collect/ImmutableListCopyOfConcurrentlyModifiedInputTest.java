@@ -18,8 +18,7 @@ package com.google.common.collect;
 
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.common.collect.Iterables.unmodifiableIterable;
-import static com.google.common.collect.Sets.newHashSet;
-import static java.lang.reflect.Proxy.newProxyInstance;
+import static com.google.common.reflect.Reflection.newProxy;
 import static java.util.Arrays.asList;
 
 import com.google.common.annotations.GwtIncompatible;
@@ -27,13 +26,17 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 @GwtIncompatible // reflection
+@NullUnmarked
 public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
   enum WrapWithIterable {
     WRAP,
@@ -106,7 +109,7 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
     void perform(List<Integer> list);
   }
 
-  static ListFrobber add(final int element) {
+  static ListFrobber add(int element) {
     return new ListFrobber() {
       @Override
       public void perform(List<Integer> list) {
@@ -119,7 +122,7 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
     return new ListFrobber() {
       @Override
       public void perform(List<Integer> list) {
-        list.remove(0);
+        list.remove(/* index */ 0);
       }
     };
   }
@@ -145,8 +148,7 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
    * modifications. The mutations occur in the same thread as the triggering method call.
    */
   private static ConcurrentlyMutatedList<Integer> newConcurrentlyMutatedList(
-      final Collection<Integer> initialContents,
-      final Iterable<ListFrobber> actionsToPerformConcurrently) {
+      Collection<Integer> initialContents, Iterable<ListFrobber> actionsToPerformConcurrently) {
     InvocationHandler invocationHandler =
         new InvocationHandler() {
           final CopyOnWriteArrayList<Integer> delegate =
@@ -157,20 +159,22 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
 
           final Iterator<ListFrobber> remainingActions = actionsToPerformConcurrently.iterator();
 
-          final Set<List<Integer>> allStates = newHashSet();
+          final Set<List<Integer>> allStates = new HashSet<>();
 
           @Override
-          public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+          public @Nullable Object invoke(
+              Object proxy, Method method, @Nullable Object @Nullable [] args) throws Throwable {
             return method.equals(getAllStatesMethod)
                 ? getAllStates()
                 : invokeListMethod(method, args);
           }
 
-          private Set<List<Integer>> getAllStates() {
+          Set<List<Integer>> getAllStates() {
             return allStates;
           }
 
-          private Object invokeListMethod(Method method, Object[] args) throws Throwable {
+          @Nullable Object invokeListMethod(Method method, @Nullable Object @Nullable [] args)
+              throws Throwable {
             try {
               Object returnValue = method.invoke(delegate, args);
               mutateDelegate();
@@ -182,7 +186,7 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
             }
           }
 
-          private void mutateDelegate() {
+          void mutateDelegate() {
             allStates.add(ImmutableList.copyOf(delegate));
             remainingActions.next().perform(delegate);
             allStates.add(ImmutableList.copyOf(delegate));
@@ -191,11 +195,7 @@ public class ImmutableListCopyOfConcurrentlyModifiedInputTest extends TestCase {
 
     @SuppressWarnings("unchecked")
     ConcurrentlyMutatedList<Integer> list =
-        (ConcurrentlyMutatedList<Integer>)
-            newProxyInstance(
-                ImmutableListCopyOfConcurrentlyModifiedInputTest.class.getClassLoader(),
-                new Class[] {ConcurrentlyMutatedList.class},
-                invocationHandler);
+        newProxy(ConcurrentlyMutatedList.class, invocationHandler);
     return list;
   }
 }

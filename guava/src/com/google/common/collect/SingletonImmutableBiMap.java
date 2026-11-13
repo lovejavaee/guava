@@ -18,12 +18,13 @@ package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.CollectPreconditions.checkEntryNotNull;
+import static com.google.common.collect.Maps.immutableEntry;
 
 import com.google.common.annotations.GwtCompatible;
-import com.google.errorprone.annotations.concurrent.LazyInit;
-import com.google.j2objc.annotations.RetainedWith;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.util.function.BiConsumer;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of {@link ImmutableMap} with exactly one entry.
@@ -31,9 +32,8 @@ import javax.annotation.CheckForNull;
  * @author Jesse Wilson
  * @author Kevin Bourrillion
  */
-@GwtCompatible(serializable = true, emulated = true)
+@GwtCompatible
 @SuppressWarnings("serial") // uses writeReplace(), not default serialization
-@ElementTypesAreNonnullByDefault
 final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
 
   final transient K singleKey;
@@ -43,18 +43,17 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
     checkEntryNotNull(singleKey, singleValue);
     this.singleKey = singleKey;
     this.singleValue = singleValue;
-    this.inverse = null;
   }
 
-  private SingletonImmutableBiMap(K singleKey, V singleValue, ImmutableBiMap<V, K> inverse) {
+  /** Private constructor that skips the nullness check. */
+  // TODO(cpovirk): Justify its existence, or delete it.
+  private SingletonImmutableBiMap(K singleKey, V singleValue, @Nullable Void unused) {
     this.singleKey = singleKey;
     this.singleValue = singleValue;
-    this.inverse = inverse;
   }
 
   @Override
-  @CheckForNull
-  public V get(@CheckForNull Object key) {
+  public @Nullable V get(@Nullable Object key) {
     return singleKey.equals(key) ? singleValue : null;
   }
 
@@ -69,12 +68,12 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
   }
 
   @Override
-  public boolean containsKey(@CheckForNull Object key) {
+  public boolean containsKey(@Nullable Object key) {
     return singleKey.equals(key);
   }
 
   @Override
-  public boolean containsValue(@CheckForNull Object value) {
+  public boolean containsValue(@Nullable Object value) {
     return singleValue.equals(value);
   }
 
@@ -84,30 +83,26 @@ final class SingletonImmutableBiMap<K, V> extends ImmutableBiMap<K, V> {
   }
 
   @Override
-  ImmutableSet<Entry<K, V>> createEntrySet() {
-    return ImmutableSet.of(Maps.immutableEntry(singleKey, singleValue));
+  public ImmutableSet<Entry<K, V>> entrySet() {
+    return ImmutableSet.of(immutableEntry(singleKey, singleValue));
   }
 
   @Override
-  ImmutableSet<K> createKeySet() {
+  public ImmutableSet<K> keySet() {
     return ImmutableSet.of(singleKey);
   }
 
-  @CheckForNull private final transient ImmutableBiMap<V, K> inverse;
-  @LazyInit @RetainedWith @CheckForNull private transient ImmutableBiMap<V, K> lazyInverse;
-
   @Override
   public ImmutableBiMap<V, K> inverse() {
-    if (inverse != null) {
-      return inverse;
-    } else {
-      // racy single-check idiom
-      ImmutableBiMap<V, K> result = lazyInverse;
-      if (result == null) {
-        return lazyInverse = new SingletonImmutableBiMap<>(singleValue, singleKey, this);
-      } else {
-        return result;
-      }
-    }
+    return new SingletonImmutableBiMap<>(singleValue, singleKey, null);
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

@@ -17,12 +17,10 @@ package com.google.common.util.concurrent;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A support class for {@code ListenableFuture} implementations to manage their listeners. An
@@ -40,22 +38,21 @@ import javax.annotation.CheckForNull;
  * @author Sven Mawson
  * @since 1.0
  */
-@J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public final class ExecutionList {
   /** Logger to log exceptions caught when running runnables. */
-  private static final Logger log = Logger.getLogger(ExecutionList.class.getName());
+  private static final LazyLogger log = new LazyLogger(ExecutionList.class);
+
+  private final Object lock = new Object();
 
   /**
    * The runnable, executor pairs to execute. This acts as a stack threaded through the {@link
    * RunnableExecutorPair#next} field.
    */
-  @GuardedBy("this")
-  @CheckForNull
-  private RunnableExecutorPair runnables;
+  @GuardedBy("lock")
+  private @Nullable RunnableExecutorPair runnables;
 
-  @GuardedBy("this")
+  @GuardedBy("lock")
   private boolean executed;
 
   /** Creates a new, empty {@link ExecutionList}. */
@@ -78,7 +75,7 @@ public final class ExecutionList {
     // Lock while we check state. We must maintain the lock while adding the new pair so that
     // another thread can't run the list out from under us. We only add to the list if we have not
     // yet started execution.
-    synchronized (this) {
+    synchronized (lock) {
       if (!executed) {
         runnables = new RunnableExecutorPair(runnable, executor, runnables);
         return;
@@ -106,7 +103,7 @@ public final class ExecutionList {
     // Lock while we update our state so the add method above will finish adding any listeners
     // before we start to run them.
     RunnableExecutorPair list;
-    synchronized (this) {
+    synchronized (lock) {
       if (executed) {
         return;
       }
@@ -140,27 +137,31 @@ public final class ExecutionList {
    * Submits the given runnable to the given {@link Executor} catching and logging all {@linkplain
    * RuntimeException runtime exceptions} thrown by the executor.
    */
+  @SuppressWarnings("CatchingUnchecked") // sneaky checked exception
   private static void executeListener(Runnable runnable, Executor executor) {
     try {
       executor.execute(runnable);
-    } catch (RuntimeException e) {
+    } catch (Exception e) { // sneaky checked exception
       // Log it and keep going -- bad runnable and/or executor. Don't punish the other runnables if
-      // we're given a bad one. We only catch RuntimeException because we want Errors to propagate
-      // up.
-      log.log(
-          Level.SEVERE,
-          "RuntimeException while executing runnable " + runnable + " with executor " + executor,
-          e);
+      // we're given a bad one. We only catch Exception because we want Errors to propagate up.
+      log.get()
+          .log(
+              Level.SEVERE,
+              "RuntimeException while executing runnable "
+                  + runnable
+                  + " with executor "
+                  + executor,
+              e);
     }
   }
 
   private static final class RunnableExecutorPair {
     final Runnable runnable;
     final Executor executor;
-    @CheckForNull RunnableExecutorPair next;
+    @Nullable RunnableExecutorPair next;
 
     RunnableExecutorPair(
-        Runnable runnable, Executor executor, @CheckForNull RunnableExecutorPair next) {
+        Runnable runnable, Executor executor, @Nullable RunnableExecutorPair next) {
       this.runnable = runnable;
       this.executor = executor;
       this.next = next;

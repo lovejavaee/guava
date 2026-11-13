@@ -20,6 +20,7 @@ import static com.google.common.collect.testing.features.CollectionSize.ZERO;
 import static com.google.common.collect.testing.features.MapFeature.ALLOWS_NULL_KEYS;
 import static com.google.common.collect.testing.features.MapFeature.ALLOWS_NULL_VALUES;
 import static com.google.common.collect.testing.features.MapFeature.SUPPORTS_PUT;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.testing.AbstractMapTester;
@@ -28,7 +29,8 @@ import com.google.common.collect.testing.features.MapFeature;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentMap;
-import org.junit.Ignore;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A generic JUnit test which tests {@code putIfAbsent} operations on a concurrent map. Can't be
@@ -38,7 +40,7 @@ import org.junit.Ignore;
  * @author Louis Wasserman
  */
 @GwtCompatible
-@Ignore // Affects only Android test runner, which respects JUnit 4 annotations on JUnit 3 tests.
+@NullMarked
 public class ConcurrentMapPutIfAbsentTester<K, V> extends AbstractMapTester<K, V> {
   @Override
   protected ConcurrentMap<K, V> getMap() {
@@ -63,11 +65,7 @@ public class ConcurrentMapPutIfAbsentTester<K, V> extends AbstractMapTester<K, V
 
   @MapFeature.Require(absent = SUPPORTS_PUT)
   public void testPutIfAbsent_unsupportedAbsent() {
-    try {
-      putIfAbsent(e3());
-      fail("putIfAbsent(notPresent, value) should throw");
-    } catch (UnsupportedOperationException expected) {
-    }
+    assertThrows(UnsupportedOperationException.class, () -> putIfAbsent(e3()));
     expectUnchanged();
     expectMissing(e3());
   }
@@ -97,11 +95,7 @@ public class ConcurrentMapPutIfAbsentTester<K, V> extends AbstractMapTester<K, V
 
   @MapFeature.Require(value = SUPPORTS_PUT, absent = ALLOWS_NULL_KEYS)
   public void testPutIfAbsent_nullKeyUnsupported() {
-    try {
-      getMap().putIfAbsent(null, v3());
-      fail("putIfAbsent(null, value) should throw");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> getMap().putIfAbsent(null, v3()));
     expectUnchanged();
     expectNullKeyMissingWhenNullKeysUnsupported(
         "Should not contain null key after unsupported putIfAbsent(null, value)");
@@ -109,11 +103,7 @@ public class ConcurrentMapPutIfAbsentTester<K, V> extends AbstractMapTester<K, V
 
   @MapFeature.Require(value = SUPPORTS_PUT, absent = ALLOWS_NULL_VALUES)
   public void testPutIfAbsent_nullValueUnsupported() {
-    try {
-      getMap().putIfAbsent(k3(), null);
-      fail("putIfAbsent(key, null) should throw");
-    } catch (NullPointerException expected) {
-    }
+    assertThrows(NullPointerException.class, () -> getMap().putIfAbsent(k3(), null));
     expectUnchanged();
     expectNullValueMissingWhenNullValuesUnsupported(
         "Should not contain null value after unsupported put(key, null)");
@@ -132,7 +122,7 @@ public class ConcurrentMapPutIfAbsentTester<K, V> extends AbstractMapTester<K, V
   }
 
   @CanIgnoreReturnValue
-  private V putIfAbsent(Entry<K, V> entry) {
+  private @Nullable V putIfAbsent(Entry<K, V> entry) {
     return getMap().putIfAbsent(entry.getKey(), entry.getValue());
   }
 }

@@ -5,11 +5,11 @@
   <parent>
     <groupId>com.google.guava</groupId>
     <artifactId>guava-parent</artifactId>
-    <version>26.0-android</version>
+    <version>33.4.0-android</version>
   </parent>
   <artifactId>failureaccess</artifactId>
-  <version>1.0.1</version>
-  <packaging>bundle</packaging>
+  <version>1.0.3</version>
+  <packaging>jar</packaging>
   <name>Guava InternalFutureFailureAccess and InternalFutures</name>
   <description>
     Contains
@@ -20,8 +20,76 @@
     Guava (just as they can use ListenableFuture by depending on the
     listenablefuture artifact).
   </description>
+  <properties>
+    <artifactregistry-maven-wagon.version>2.2.5</artifactregistry-maven-wagon.version>
+    <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
+    <maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
+  </properties>
   <build>
     <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>8</release>
+              <excludes>
+                <exclude>module-info.java</exclude>
+              </excludes>
+              <compilerArgs>
+                <!--
+                    Make includes/excludes fully work:
+                    https://issues.apache.org/jira/browse/MCOMPILER-174
+                    (Compare what guava-gwt has to do for maven-javadoc-plugin.)
+                -->
+                <arg>-sourcepath</arg>
+                <arg>doesnotexist</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+          <execution>
+            <id>compile-java9</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>9</release>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src</compileSourceRoot>
+              </compileSourceRoots>
+
+              <!-- JPMS needs access to the module sources to complete a modular Java build. -->
+              <compilerArgs>
+                <arg>-sourcepath</arg>
+                <arg>${project.basedir}/src</arg>
+                <arg>--add-reads=com.google.common=ALL-UNNAMED</arg>
+                <!-- https://errorprone.info/docs/installation#maven -->
+                <arg>-XDcompilePolicy=simple</arg>
+              </compilerArgs>
+              <multiReleaseOutput>true</multiReleaseOutput>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+            <manifestEntries>
+              <Multi-Release>true</Multi-Release>
+            </manifestEntries>
+          </archive>
+          <excludes>
+            <exclude>/module-info.class</exclude>
+            <exclude>META-INF/versions/9/com/google/common/util/concurrent/internal/*.class</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
       <plugin>
         <artifactId>maven-source-plugin</artifactId>
       </plugin>
@@ -33,7 +101,7 @@
         <extensions>true</extensions>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
-        <version>5.1.8</version>
+        <version>6.0.0</version>
         <executions>
           <execution>
             <id>bundle-manifest</id>
@@ -45,7 +113,9 @@
         </executions>
         <configuration>
           <instructions>
-            <Export-Package>com.google.common.util.concurrent.internal</Export-Package>
+            <!-- Silence a warning that claims that META-INF/versions/9/... is the "wrong directory" for our classes. -->
+            <_fixupmessages>^Classes found in the wrong directory: .*</_fixupmessages>
+            <Export-Package>com.google.common.util.concurrent.internal,!META-INF.*</Export-Package>
             <Bundle-DocURL>https://github.com/google/guava/</Bundle-DocURL>
           </instructions>
         </configuration>
@@ -54,15 +124,77 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <executions>
           <execution>
-            <id>attach-docs</id>
+            <id>attach-javadocs</id>
           </execution>
           <execution>
-            <id>generate-javadoc-site-report</id>
-            <phase>site</phase>
             <goals><goal>javadoc</goal></goals>
           </execution>
         </executions>
       </plugin>
     </plugins>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>${maven-deploy-plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
+  <profiles>
+    <!-- TODO(cpovirk): Once we update <parent> above to a release containing these profiles, drop them from here. -->
+    <profile>
+      <id>sonatype-oss-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.8</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>com.google.cloud.artifactregistry</groupId>
+            <artifactId>artifactregistry-maven-wagon</artifactId>
+            <version>${artifactregistry-maven-wagon.version}</version>
+            <extensions>true</extensions>
+          </plugin>
+        </plugins>
+      </build>
+      <distributionManagement>
+        <repository>
+          <id>oss-exit-gate</id>
+          <url>artifactregistry://us-maven.pkg.dev/oss-exit-gate-prod/guava--mavencentral</url>
+        </repository>
+      </distributionManagement>
+    </profile>
+    <profile>
+      <id>bypass-oss-exit-gate</id>
+      <!-- TODO(cpovirk): Remove <activation> once OSS Exit Gate setup is complete; see main pom.xml. -->
+      <activation>
+        <!-- We would use activeByDefault, but then it would be deactivated automatically when any *other* profile is activated, including sonatype-oss-release. -->
+        <property>
+          <name>bypass-oss-exit-gate</name>
+          <value>!false</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>${central-publishing-maven-plugin.version}</version>
+            <extensions>true</extensions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

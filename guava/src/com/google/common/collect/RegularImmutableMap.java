@@ -19,6 +19,7 @@ package com.google.common.collect;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndex;
 import static com.google.common.collect.CollectPreconditions.checkEntryNotNull;
+import static com.google.common.collect.Hashing.closedTableSize;
 import static com.google.common.collect.ImmutableMapEntry.createEntryArray;
 import static java.util.Objects.requireNonNull;
 
@@ -31,18 +32,19 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.Serializable;
 import java.util.IdentityHashMap;
 import java.util.function.BiConsumer;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Implementation of {@link ImmutableMap} with two or more entries.
+ * Implementation of {@link ImmutableMap} used for 0 entries and for 2+ entries. Additional
+ * implementations exist for particular cases, like {@link ImmutableTable} views and hash flooding.
+ * (This doc discusses {@link ImmutableMap} subclasses only for the JRE flavor; the Android flavor
+ * differs.)
  *
  * @author Jesse Wilson
  * @author Kevin Bourrillion
  * @author Gregory Kick
  */
-@GwtCompatible(serializable = true, emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
   @SuppressWarnings("unchecked")
   static final ImmutableMap<Object, Object> EMPTY =
@@ -65,12 +67,12 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
    * Maximum allowed length of a hash table bucket before falling back to a j.u.HashMap based
    * implementation. Experimentally determined.
    */
-  @VisibleForTesting static final int MAX_HASH_BUCKET_LENGTH = 8;
+  static final int MAX_HASH_BUCKET_LENGTH = 8;
 
   // entries in insertion order
   @VisibleForTesting final transient Entry<K, V>[] entries;
   // array of linked lists of entries
-  @CheckForNull private final transient @Nullable ImmutableMapEntry<K, V>[] table;
+  private final transient @Nullable ImmutableMapEntry<K, V> @Nullable [] table;
   // 'and' with an int to get a table index
   private final transient int mask;
 
@@ -109,9 +111,8 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
      * of non-null entries.
      */
     @SuppressWarnings("nullness")
-    Entry<K, V>[] entries =
-        (n == entryArray.length) ? (Entry<K, V>[]) entryArray : createEntryArray(n);
-    int tableSize = Hashing.closedTableSize(n, MAX_LOAD_FACTOR);
+    Entry<K, V>[] entries = (n == entryArray.length) ? entryArray : createEntryArray(n);
+    int tableSize = closedTableSize(n, MAX_LOAD_FACTOR);
     @Nullable ImmutableMapEntry<K, V>[] table = createEntryArray(tableSize);
     int mask = tableSize - 1;
     // If duplicates are allowed, this IdentityHashMap will record the final Entry for each
@@ -159,9 +160,8 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
       entries[entryIndex] = effectiveEntry;
     }
     if (duplicates != null) {
-      // Explicit type parameters needed here to avoid a problem with nullness inference.
-      entries = RegularImmutableMap.<K, V>removeDuplicates(entries, n, n - dupCount, duplicates);
-      int newTableSize = Hashing.closedTableSize(entries.length, MAX_LOAD_FACTOR);
+      entries = removeDuplicates(entries, n, n - dupCount, duplicates);
+      int newTableSize = closedTableSize(entries.length, MAX_LOAD_FACTOR);
       if (newTableSize != tableSize) {
         return fromEntryArrayCheckingBucketOverflow(
             entries.length, entries, /* throwIfDuplicateKeys= */ true);
@@ -214,7 +214,7 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
   }
 
   private RegularImmutableMap(
-      Entry<K, V>[] entries, @CheckForNull @Nullable ImmutableMapEntry<K, V>[] table, int mask) {
+      Entry<K, V>[] entries, @Nullable ImmutableMapEntry<K, V> @Nullable [] table, int mask) {
     this.entries = entries;
     this.table = table;
     this.mask = mask;
@@ -232,11 +232,10 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
    *     flooding attack
    */
   @CanIgnoreReturnValue
-  @CheckForNull
-  static <K, V> ImmutableMapEntry<K, V> checkNoConflictInKeyBucket(
+  static <K, V> @Nullable ImmutableMapEntry<K, V> checkNoConflictInKeyBucket(
       Object key,
       Object newValue,
-      @CheckForNull ImmutableMapEntry<K, V> keyBucketHead,
+      @Nullable ImmutableMapEntry<K, V> keyBucketHead,
       boolean throwIfDuplicateKeys)
       throws BucketOverflowException {
     int bucketSize = 0;
@@ -255,19 +254,15 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
     return null;
   }
 
-  static class BucketOverflowException extends Exception {}
+  static final class BucketOverflowException extends Exception {}
 
   @Override
-  @CheckForNull
-  public V get(@CheckForNull Object key) {
+  public @Nullable V get(@Nullable Object key) {
     return get(key, table, mask);
   }
 
-  @CheckForNull
-  static <V> V get(
-      @CheckForNull Object key,
-      @CheckForNull @Nullable ImmutableMapEntry<?, V>[] keyTable,
-      int mask) {
+  static <V> @Nullable V get(
+      @Nullable Object key, @Nullable ImmutableMapEntry<?, V> @Nullable [] keyTable, int mask) {
     if (key == null || keyTable == null) {
       return null;
     }
@@ -309,16 +304,15 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
   }
 
   @Override
-  ImmutableSet<Entry<K, V>> createEntrySet() {
+  public ImmutableSet<Entry<K, V>> entrySet() {
     return new ImmutableMapEntrySet.RegularEntrySet<>(this, entries);
   }
 
   @Override
-  ImmutableSet<K> createKeySet() {
+  public ImmutableSet<K> keySet() {
     return new KeySet<>(this);
   }
 
-  @GwtCompatible(emulated = true)
   private static final class KeySet<K> extends IndexedImmutableSet<K> {
     private final RegularImmutableMap<K, ?> map;
 
@@ -332,7 +326,7 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object object) {
+    public boolean contains(@Nullable Object object) {
       return map.containsKey(object);
     }
 
@@ -346,11 +340,20 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
       return map.size();
     }
 
+    // redeclare to help optimizers with b/310253115
+    @SuppressWarnings("RedundantOverride")
+    @Override
+    @J2ktIncompatible
+    @GwtIncompatible
+        Object writeReplace() {
+      return super.writeReplace();
+    }
+
     // No longer used for new writes, but kept so that old data can still be read.
-    @GwtIncompatible // serialization
+    @GwtIncompatible
     @J2ktIncompatible
     @SuppressWarnings("unused")
-    private static class SerializedForm<K> implements Serializable {
+    private static final class SerializedForm<K> implements Serializable {
       final ImmutableMap<K, ?> map;
 
       SerializedForm(ImmutableMap<K, ?> map) {
@@ -361,17 +364,26 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
         return map.keySet();
       }
 
-      @J2ktIncompatible // serialization
       private static final long serialVersionUID = 0;
     }
   }
 
+  /*
+   * While we *could* declare a return type of ImmutableList on this package-private implementation
+   * type, no user would see it, so all we'd end up with is an extra method in the class file.
+   *
+   * (Arguably it would have been even better not to have returned an ImmutableList in the first
+   * place. It's especially a bit strange given that ImmutableMap.of(k, v).values() (a
+   * SingletonImmutableBiMap) returns an ImmutubleSet. Surely users have already come to depend on
+   * these implementation details, such as through `equals` calls. Maybe we should have returned a
+   * more vanilla ImmutableCollection with a fast asList() method?))
+   */
+  @SuppressWarnings("PreferredInterfaceType")
   @Override
-  ImmutableCollection<V> createValues() {
+  public ImmutableCollection<V> values() {
     return new Values<>(this);
   }
 
-  @GwtCompatible(emulated = true)
   private static final class Values<K, V> extends ImmutableList<V> {
     final RegularImmutableMap<K, V> map;
 
@@ -394,11 +406,20 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
       return true;
     }
 
+    // redeclare to help optimizers with b/310253115
+    @SuppressWarnings("RedundantOverride")
+    @Override
+    @J2ktIncompatible
+    @GwtIncompatible
+        Object writeReplace() {
+      return super.writeReplace();
+    }
+
     // No longer used for new writes, but kept so that old data can still be read.
-    @GwtIncompatible // serialization
+    @GwtIncompatible
     @J2ktIncompatible
     @SuppressWarnings("unused")
-    private static class SerializedForm<V> implements Serializable {
+    private static final class SerializedForm<V> implements Serializable {
       final ImmutableMap<?, V> map;
 
       SerializedForm(ImmutableMap<?, V> map) {
@@ -409,13 +430,20 @@ final class RegularImmutableMap<K, V> extends ImmutableMap<K, V> {
         return map.values();
       }
 
-      @J2ktIncompatible // serialization
       private static final long serialVersionUID = 0;
     }
   }
 
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
+  }
+
   // This class is never actually serialized directly, but we have to make the
   // warning go away (and suppressing would suppress for all nested classes too)
-  @J2ktIncompatible // serialization
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

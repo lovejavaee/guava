@@ -17,19 +17,26 @@
 package com.google.common.cache;
 
 import static com.google.common.truth.Truth.assertThat;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static org.junit.Assert.assertThrows;
 
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /** Test Java8 map.compute in concurrent cache context. */
+@GwtIncompatible
+@J2ktIncompatible
+@NullUnmarked
 public class LocalCacheMapComputeTest extends TestCase {
   final int count = 10000;
   final String delimiter = "-";
@@ -42,23 +49,19 @@ public class LocalCacheMapComputeTest extends TestCase {
   }
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
     this.cache =
         CacheBuilder.newBuilder()
-            .expireAfterAccess(500000, TimeUnit.MILLISECONDS)
+            .expireAfterAccess(500000, MILLISECONDS)
             .maximumSize(count)
             .build();
   }
 
   public void testComputeIfAbsent() {
     // simultaneous insertion for same key, expect 1 winner
-    doParallelCacheOp(
-        count,
-        n -> {
-          cache.asMap().computeIfAbsent(key, k -> "value" + n);
-        });
-    assertEquals(1, cache.size());
+    doParallelCacheOp(count, n -> cache.asMap().computeIfAbsent(key, k -> "value" + n));
+    assertThat(cache.size()).isEqualTo(1);
   }
 
   public void testComputeIfAbsentEviction() {
@@ -88,12 +91,8 @@ public class LocalCacheMapComputeTest extends TestCase {
   public void testComputeIfPresent() {
     cache.put(key, "1");
     // simultaneous update for same key, expect count successful updates
-    doParallelCacheOp(
-        count,
-        n -> {
-          cache.asMap().computeIfPresent(key, (k, v) -> v + delimiter + n);
-        });
-    assertEquals(1, cache.size());
+    doParallelCacheOp(count, n -> cache.asMap().computeIfPresent(key, (k, v) -> v + delimiter + n));
+    assertThat(cache.size()).isEqualTo(1);
     assertThat(cache.getIfPresent(key).split(delimiter)).hasLength(count + 1);
   }
 
@@ -101,13 +100,7 @@ public class LocalCacheMapComputeTest extends TestCase {
     List<RemovalNotification<Integer, Integer>> notifications = new ArrayList<>();
     Cache<Integer, Integer> cache =
         CacheBuilder.newBuilder()
-            .removalListener(
-                new RemovalListener<Integer, Integer>() {
-                  @Override
-                  public void onRemoval(RemovalNotification<Integer, Integer> notification) {
-                    notifications.add(notification);
-                  }
-                })
+            .removalListener((RemovalNotification<Integer, Integer> n) -> notifications.add(n))
             .build();
     cache.put(1, 2);
 
@@ -122,40 +115,44 @@ public class LocalCacheMapComputeTest extends TestCase {
     CacheTesting.checkEmpty(cache);
   }
 
+  public void testComputeIfPresent_error() {
+    Cache<String, String> cache = CacheBuilder.newBuilder().build();
+    cache.put(key, "1");
+    assertThrows(
+        Error.class,
+        () ->
+            cache
+                .asMap()
+                .computeIfPresent(
+                    key,
+                    (k, v) -> {
+                      throw new Error();
+                    }));
+    assertThat(cache.getIfPresent(key)).isEqualTo("1");
+    assertThat(cache.asMap().computeIfPresent(key, (k, v) -> "2")).isEqualTo("2");
+  }
+
   public void testUpdates() {
     cache.put(key, "1");
     // simultaneous update for same key, some null, some non-null
     doParallelCacheOp(
-        count,
-        n -> {
-          cache.asMap().compute(key, (k, v) -> n % 2 == 0 ? v + delimiter + n : null);
-        });
-    assertTrue(1 >= cache.size());
+        count, n -> cache.asMap().compute(key, (k, v) -> n % 2 == 0 ? v + delimiter + n : null));
+    assertThat(cache.size()).isAtMost(1);
   }
 
   public void testCompute() {
     cache.put(key, "1");
     // simultaneous deletion
-    doParallelCacheOp(
-        count,
-        n -> {
-          cache.asMap().compute(key, (k, v) -> null);
-        });
-    assertEquals(0, cache.size());
+    doParallelCacheOp(count, n -> cache.asMap().compute(key, (k, v) -> null));
+    assertThat(cache.size()).isEqualTo(0);
   }
 
   public void testComputeWithLoad() {
     Queue<RemovalNotification<String, String>> notifications = new ConcurrentLinkedQueue<>();
     cache =
         CacheBuilder.newBuilder()
-            .removalListener(
-                new RemovalListener<String, String>() {
-                  @Override
-                  public void onRemoval(RemovalNotification<String, String> notification) {
-                    notifications.add(notification);
-                  }
-                })
-            .expireAfterAccess(500000, TimeUnit.MILLISECONDS)
+            .removalListener(notifications::add)
+            .expireAfterAccess(500000, MILLISECONDS)
             .maximumSize(count)
             .build();
 
@@ -180,20 +177,18 @@ public class LocalCacheMapComputeTest extends TestCase {
   }
 
   public void testComputeExceptionally() {
-    try {
-      doParallelCacheOp(
-          count,
-          n -> {
-            cache
-                .asMap()
-                .compute(
-                    key,
-                    (k, v) -> {
-                      throw new RuntimeException();
-                    });
-          });
-      fail("Should not get here");
-    } catch (RuntimeException ex) {
-    }
+    assertThrows(
+        RuntimeException.class,
+        () ->
+            doParallelCacheOp(
+                count,
+                n ->
+                    cache
+                        .asMap()
+                        .compute(
+                            key,
+                            (k, v) -> {
+                              throw new RuntimeException();
+                            })));
   }
 }

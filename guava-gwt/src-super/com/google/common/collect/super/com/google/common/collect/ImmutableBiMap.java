@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.function.Function;
 import java.util.stream.Collector;
+import org.jspecify.annotations.Nullable;
 
 /**
  * GWT emulation of {@link com.google.common.collect.ImmutableBiMap}.
@@ -32,9 +33,10 @@ import java.util.stream.Collector;
  */
 public abstract class ImmutableBiMap<K, V> extends ForwardingImmutableMap<K, V>
     implements BiMap<K, V> {
-  public static <T, K, V> Collector<T, ?, ImmutableBiMap<K, V>> toImmutableBiMap(
-      Function<? super T, ? extends K> keyFunction,
-      Function<? super T, ? extends V> valueFunction) {
+  public static <T extends @Nullable Object, K, V>
+      Collector<T, ?, ImmutableBiMap<K, V>> toImmutableBiMap(
+          Function<? super T, ? extends K> keyFunction,
+          Function<? super T, ? extends V> valueFunction) {
     return CollectCollectors.toImmutableBiMap(keyFunction, valueFunction);
   }
 
@@ -194,6 +196,7 @@ public abstract class ImmutableBiMap<K, V> extends ForwardingImmutableMap<K, V>
     }
 
     @CanIgnoreReturnValue
+    @Override
     public Builder<K, V> orderEntriesByValue(Comparator<? super V> valueComparator) {
       super.orderEntriesByValue(valueComparator);
       return this;
@@ -256,7 +259,7 @@ public abstract class ImmutableBiMap<K, V> extends ForwardingImmutableMap<K, V>
     return inverse().keySet();
   }
 
-  public final V forcePut(K key, V value) {
+  public final @Nullable V forcePut(K key, V value) {
     throw new UnsupportedOperationException();
   }
 }

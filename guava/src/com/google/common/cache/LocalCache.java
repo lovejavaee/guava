@@ -18,14 +18,20 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.cache.CacheBuilder.NULL_TICKER;
 import static com.google.common.cache.CacheBuilder.UNSET_INT;
+import static com.google.common.collect.Maps.immutableEntry;
+import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
+import static com.google.common.util.concurrent.Futures.immediateFuture;
 import static com.google.common.util.concurrent.Futures.transform;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly;
+import static java.lang.Math.min;
 import static java.util.Collections.unmodifiableSet;
+import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Equivalence;
 import com.google.common.base.Stopwatch;
@@ -39,18 +45,14 @@ import com.google.common.cache.CacheLoader.UnsupportedLoadingOperationException;
 import com.google.common.collect.AbstractSequentialIterator;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.ExecutionError;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.common.util.concurrent.UncheckedExecutionException;
-import com.google.common.util.concurrent.Uninterruptibles;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
+import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.j2objc.annotations.RetainedWith;
 import com.google.j2objc.annotations.Weak;
 import java.io.IOException;
@@ -65,9 +67,10 @@ import java.util.AbstractCollection;
 import java.util.AbstractMap;
 import java.util.AbstractQueue;
 import java.util.AbstractSet;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Queue;
@@ -76,7 +79,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
@@ -86,8 +88,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The concurrent hash map implementation built by {@link CacheBuilder}.
@@ -102,10 +104,12 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 @SuppressWarnings({
   "GoodTime", // lots of violations (nanosecond math)
   "nullness", // too much trouble for the payoff
+  // All updates of `count` perform their write and any preceding read under the lock.
+  "NonAtomicVolatileUpdate",
 })
-@GwtCompatible(emulated = true)
-// TODO(cpovirk): Annotate for nullness.
-class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> {
+@GwtCompatible
+@NullUnmarked // TODO(cpovirk): Annotate for nullness.
+final class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> {
 
   /*
    * The basic strategy is to subdivide the table among Segments, each of which itself is a
@@ -236,14 +240,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   final StatsCounter globalStatsCounter;
 
   /** The default cache loader to use on loading operations. */
-  @CheckForNull final CacheLoader<? super K, V> defaultLoader;
+  final @Nullable CacheLoader<? super K, V> defaultLoader;
 
   /**
    * Creates a new, empty map with the specified strategy, initial capacity and concurrency level.
    */
   LocalCache(
-      CacheBuilder<? super K, ? super V> builder, @CheckForNull CacheLoader<? super K, V> loader) {
-    concurrencyLevel = Math.min(builder.getConcurrencyLevel(), MAX_SEGMENTS);
+      CacheBuilder<? super K, ? super V> builder, @Nullable CacheLoader<? super K, V> loader) {
+    concurrencyLevel = min(builder.getConcurrencyLevel(), MAX_SEGMENTS);
 
     keyStrength = builder.getKeyStrength();
     valueStrength = builder.getValueStrength();
@@ -260,7 +264,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     removalListener = builder.getRemovalListener();
     removalNotificationQueue =
         (removalListener == NullListener.INSTANCE)
-            ? LocalCache.discardingQueue()
+            ? discardingQueue()
             : new ConcurrentLinkedQueue<>();
 
     ticker = builder.getTicker(recordsTime());
@@ -268,9 +272,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     globalStatsCounter = builder.getStatsCounterSupplier().get();
     defaultLoader = loader;
 
-    int initialCapacity = Math.min(builder.getInitialCapacity(), MAXIMUM_CAPACITY);
+    int initialCapacity = min(builder.getInitialCapacity(), MAXIMUM_CAPACITY);
     if (evictsBySize() && !customWeigher()) {
-      initialCapacity = (int) Math.min(initialCapacity, maxWeight);
+      initialCapacity = (int) min(initialCapacity, maxWeight);
     }
 
     // Find the lowest power-of-two segmentCount that exceeds concurrencyLevel, unless
@@ -280,7 +284,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // will result in random eviction behavior.
     int segmentShift = 0;
     int segmentCount = 1;
-    while (segmentCount < concurrencyLevel && (!evictsBySize() || segmentCount * 20 <= maxWeight)) {
+    while (segmentCount < concurrencyLevel
+        && (!evictsBySize() || segmentCount * 20L <= maxWeight)) {
       ++segmentShift;
       segmentCount <<= 1;
     }
@@ -446,14 +451,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     STRONG {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new StrongEntry<>(key, hash, next);
       }
     },
     STRONG_ACCESS {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new StrongAccessEntry<>(key, hash, next);
       }
 
@@ -461,7 +466,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyAccessEntry(original, newEntry);
@@ -471,7 +476,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     STRONG_WRITE {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new StrongWriteEntry<>(key, hash, next);
       }
 
@@ -479,7 +484,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyWriteEntry(original, newEntry);
@@ -489,7 +494,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     STRONG_ACCESS_WRITE {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new StrongAccessWriteEntry<>(key, hash, next);
       }
 
@@ -497,7 +502,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyAccessEntry(original, newEntry);
@@ -508,14 +513,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     WEAK {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new WeakEntry<>(segment.keyReferenceQueue, key, hash, next);
       }
     },
     WEAK_ACCESS {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new WeakAccessEntry<>(segment.keyReferenceQueue, key, hash, next);
       }
 
@@ -523,7 +528,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyAccessEntry(original, newEntry);
@@ -533,7 +538,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     WEAK_WRITE {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new WeakWriteEntry<>(segment.keyReferenceQueue, key, hash, next);
       }
 
@@ -541,7 +546,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyWriteEntry(original, newEntry);
@@ -551,7 +556,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     WEAK_ACCESS_WRITE {
       @Override
       <K, V> ReferenceEntry<K, V> newEntry(
-          Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+          Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
         return new WeakAccessWriteEntry<>(segment.keyReferenceQueue, key, hash, next);
       }
 
@@ -559,7 +564,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       <K, V> ReferenceEntry<K, V> copyEntry(
           Segment<K, V> segment,
           ReferenceEntry<K, V> original,
-          ReferenceEntry<K, V> newNext,
+          @Nullable ReferenceEntry<K, V> newNext,
           K key) {
         ReferenceEntry<K, V> newEntry = super.copyEntry(segment, original, newNext, key);
         copyAccessEntry(original, newEntry);
@@ -604,7 +609,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * @param next entry in the same bucket
      */
     abstract <K, V> ReferenceEntry<K, V> newEntry(
-        Segment<K, V> segment, K key, int hash, @CheckForNull ReferenceEntry<K, V> next);
+        Segment<K, V> segment, K key, int hash, @Nullable ReferenceEntry<K, V> next);
 
     /**
      * Copies an entry, assigning it a new {@code next} entry.
@@ -619,12 +624,16 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      */
     // Guarded By Segment.this
     <K, V> ReferenceEntry<K, V> copyEntry(
-        Segment<K, V> segment, ReferenceEntry<K, V> original, ReferenceEntry<K, V> newNext, K key) {
+        Segment<K, V> segment,
+        ReferenceEntry<K, V> original,
+        @Nullable ReferenceEntry<K, V> newNext,
+        K key) {
       return newEntry(segment, key, original.getHash(), newNext);
     }
 
     // Guarded By Segment.this
-    <K, V> void copyAccessEntry(ReferenceEntry<K, V> original, ReferenceEntry<K, V> newEntry) {
+    final <K, V> void copyAccessEntry(
+        ReferenceEntry<K, V> original, ReferenceEntry<K, V> newEntry) {
       // TODO(fry): when we link values instead of entries this method can go
       // away, as can connectAccessOrder, nullifyAccessOrder.
       newEntry.setAccessTime(original.getAccessTime());
@@ -636,7 +645,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     // Guarded By Segment.this
-    <K, V> void copyWriteEntry(ReferenceEntry<K, V> original, ReferenceEntry<K, V> newEntry) {
+    final <K, V> void copyWriteEntry(ReferenceEntry<K, V> original, ReferenceEntry<K, V> newEntry) {
       // TODO(fry): when we link values instead of entries this method can go
       // away, as can connectWriteOrder, nullifyWriteOrder.
       newEntry.setWriteTime(original.getWriteTime());
@@ -651,8 +660,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   /** A reference to a value. */
   interface ValueReference<K, V> {
     /** Returns the value. Does not block or throw exceptions. */
-    @CheckForNull
-    V get();
+    @Nullable V get();
 
     /**
      * Waits for a value that may still be loading. Unlike get(), this method can block (in the case
@@ -661,7 +669,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * @throws ExecutionException if the loading thread throws an exception
      * @throws ExecutionError if the loading thread throws an error
      */
-    V waitForValue() throws ExecutionException;
+    @Nullable V waitForValue() throws ExecutionException;
 
     /** Returns the weight of this entry. This is assumed to be static between calls to setValue. */
     int getWeight();
@@ -670,8 +678,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * Returns the entry associated with this value reference, or {@code null} if this value
      * reference is independent of any entry.
      */
-    @CheckForNull
-    ReferenceEntry<K, V> getEntry();
+    @Nullable ReferenceEntry<K, V> getEntry();
 
     /**
      * Creates a copy of this reference for the given entry.
@@ -679,13 +686,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * <p>{@code value} may be null only for a loading reference.
      */
     ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, @CheckForNull V value, ReferenceEntry<K, V> entry);
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry);
 
     /**
      * Notify pending loads that a new value was set. This is only relevant to loading value
      * references.
      */
-    void notifyNewValue(@CheckForNull V newValue);
+    void notifyNewValue(@Nullable V newValue);
 
     /**
      * Returns true if a new value is currently loading, regardless of whether there is an existing
@@ -707,9 +714,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   /** Placeholder. Indicates that the value hasn't been set yet. */
   static final ValueReference<Object, Object> UNSET =
       new ValueReference<Object, Object>() {
-        @CheckForNull
         @Override
-        public Object get() {
+        public @Nullable Object get() {
           return null;
         }
 
@@ -718,16 +724,15 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
           return 0;
         }
 
-        @CheckForNull
         @Override
-        public ReferenceEntry<Object, Object> getEntry() {
+        public @Nullable ReferenceEntry<Object, Object> getEntry() {
           return null;
         }
 
         @Override
         public ValueReference<Object, Object> copyFor(
-            ReferenceQueue<Object> queue,
-            @CheckForNull Object value,
+            @Nullable ReferenceQueue<Object> queue,
+            @Nullable Object value,
             ReferenceEntry<Object, Object> entry) {
           return this;
         }
@@ -742,9 +747,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
           return false;
         }
 
-        @CheckForNull
         @Override
-        public Object waitForValue() {
+        public @Nullable Object waitForValue() {
           return null;
         }
 
@@ -761,18 +765,16 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   private enum NullEntry implements ReferenceEntry<Object, Object> {
     INSTANCE;
 
-    @CheckForNull
     @Override
-    public ValueReference<Object, Object> getValueReference() {
+    public @Nullable ValueReference<Object, Object> getValueReference() {
       return null;
     }
 
     @Override
     public void setValueReference(ValueReference<Object, Object> valueReference) {}
 
-    @CheckForNull
     @Override
-    public ReferenceEntry<Object, Object> getNext() {
+    public @Nullable ReferenceEntry<Object, Object> getNext() {
       return null;
     }
 
@@ -781,9 +783,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       return 0;
     }
 
-    @CheckForNull
     @Override
-    public Object getKey() {
+    public @Nullable Object getKey() {
       return null;
     }
 
@@ -935,15 +936,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
           return true;
         }
 
-        @CheckForNull
         @Override
-        public Object peek() {
+        public @Nullable Object peek() {
           return null;
         }
 
-        @CheckForNull
         @Override
-        public Object poll() {
+        public @Nullable Object poll() {
           return null;
         }
 
@@ -973,10 +972,10 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    */
 
   /** Used for strongly-referenced keys. */
-  static class StrongEntry<K, V> extends AbstractReferenceEntry<K, V> {
+  private static class StrongEntry<K, V> extends AbstractReferenceEntry<K, V> {
     final K key;
 
-    StrongEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+    StrongEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       this.key = key;
       this.hash = hash;
       this.next = next;
@@ -990,7 +989,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // The code below is exactly the same for each entry type.
 
     final int hash;
-    @CheckForNull final ReferenceEntry<K, V> next;
+    final @Nullable ReferenceEntry<K, V> next;
     volatile ValueReference<K, V> valueReference = unset();
 
     @Override
@@ -1009,13 +1008,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public ReferenceEntry<K, V> getNext() {
+    public @Nullable ReferenceEntry<K, V> getNext() {
       return next;
     }
   }
 
-  static final class StrongAccessEntry<K, V> extends StrongEntry<K, V> {
-    StrongAccessEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  private static final class StrongAccessEntry<K, V> extends StrongEntry<K, V> {
+    StrongAccessEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(key, hash, next);
     }
 
@@ -1060,8 +1059,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  static final class StrongWriteEntry<K, V> extends StrongEntry<K, V> {
-    StrongWriteEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  private static final class StrongWriteEntry<K, V> extends StrongEntry<K, V> {
+    StrongWriteEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(key, hash, next);
     }
 
@@ -1106,8 +1105,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  static final class StrongAccessWriteEntry<K, V> extends StrongEntry<K, V> {
-    StrongAccessWriteEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  private static final class StrongAccessWriteEntry<K, V> extends StrongEntry<K, V> {
+    StrongAccessWriteEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(key, hash, next);
     }
 
@@ -1193,15 +1192,15 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   /** Used for weakly-referenced keys. */
-  static class WeakEntry<K, V> extends WeakReference<K> implements ReferenceEntry<K, V> {
-    WeakEntry(ReferenceQueue<K> queue, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
-      super(key, queue);
+  private static class WeakEntry<K, V> extends WeakReference<K> implements ReferenceEntry<K, V> {
+    WeakEntry(ReferenceQueue<K> queue, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
+      super(checkNotValueType(key), queue);
       this.hash = hash;
       this.next = next;
     }
 
     @Override
-    public K getKey() {
+    public @Nullable K getKey() {
       return get();
     }
 
@@ -1277,7 +1276,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // The code below is exactly the same for each entry type.
 
     final int hash;
-    @CheckForNull final ReferenceEntry<K, V> next;
+    final @Nullable ReferenceEntry<K, V> next;
     volatile ValueReference<K, V> valueReference = unset();
 
     @Override
@@ -1296,14 +1295,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public ReferenceEntry<K, V> getNext() {
+    public @Nullable ReferenceEntry<K, V> getNext() {
       return next;
     }
   }
 
-  static final class WeakAccessEntry<K, V> extends WeakEntry<K, V> {
-    WeakAccessEntry(
-        ReferenceQueue<K> queue, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  private static final class WeakAccessEntry<K, V> extends WeakEntry<K, V> {
+    WeakAccessEntry(ReferenceQueue<K> queue, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(queue, key, hash, next);
     }
 
@@ -1348,9 +1346,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  static final class WeakWriteEntry<K, V> extends WeakEntry<K, V> {
-    WeakWriteEntry(
-        ReferenceQueue<K> queue, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  private static final class WeakWriteEntry<K, V> extends WeakEntry<K, V> {
+    WeakWriteEntry(ReferenceQueue<K> queue, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(queue, key, hash, next);
     }
 
@@ -1395,9 +1392,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  static final class WeakAccessWriteEntry<K, V> extends WeakEntry<K, V> {
+  private static final class WeakAccessWriteEntry<K, V> extends WeakEntry<K, V> {
     WeakAccessWriteEntry(
-        ReferenceQueue<K> queue, K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+        ReferenceQueue<K> queue, K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       super(queue, key, hash, next);
     }
 
@@ -1483,11 +1480,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   /** References a weak value. */
-  static class WeakValueReference<K, V> extends WeakReference<V> implements ValueReference<K, V> {
+  private static class WeakValueReference<K, V> extends WeakReference<V>
+      implements ValueReference<K, V> {
     final ReferenceEntry<K, V> entry;
 
     WeakValueReference(ReferenceQueue<V> queue, V referent, ReferenceEntry<K, V> entry) {
-      super(referent, queue);
+      super(checkNotValueType(referent), queue);
       this.entry = entry;
     }
 
@@ -1506,7 +1504,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return new WeakValueReference<>(queue, value, entry);
     }
 
@@ -1521,17 +1519,18 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public V waitForValue() {
+    public @Nullable V waitForValue() {
       return get();
     }
   }
 
   /** References a soft value. */
-  static class SoftValueReference<K, V> extends SoftReference<V> implements ValueReference<K, V> {
+  private static class SoftValueReference<K, V> extends SoftReference<V>
+      implements ValueReference<K, V> {
     final ReferenceEntry<K, V> entry;
 
     SoftValueReference(ReferenceQueue<V> queue, V referent, ReferenceEntry<K, V> entry) {
-      super(referent, queue);
+      super(checkNotValueType(referent), queue);
       this.entry = entry;
     }
 
@@ -1550,7 +1549,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return new SoftValueReference<>(queue, value, entry);
     }
 
@@ -1565,13 +1564,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public V waitForValue() {
+    public @Nullable V waitForValue() {
       return get();
     }
   }
 
   /** References a strong value. */
-  static class StrongValueReference<K, V> implements ValueReference<K, V> {
+  private static class StrongValueReference<K, V> implements ValueReference<K, V> {
     final V referent;
 
     StrongValueReference(V referent) {
@@ -1579,7 +1578,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public V get() {
+    public final V get() {
       return referent;
     }
 
@@ -1589,13 +1588,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public ReferenceEntry<K, V> getEntry() {
+    public @Nullable ReferenceEntry<K, V> getEntry() {
       return null;
     }
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return this;
     }
 
@@ -1610,7 +1609,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public V waitForValue() {
+    public @Nullable V waitForValue() {
       return get();
     }
 
@@ -1619,7 +1618,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   /** References a weak value. */
-  static final class WeightedWeakValueReference<K, V> extends WeakValueReference<K, V> {
+  private static final class WeightedWeakValueReference<K, V> extends WeakValueReference<K, V> {
     final int weight;
 
     WeightedWeakValueReference(
@@ -1635,13 +1634,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return new WeightedWeakValueReference<>(queue, value, entry, weight);
     }
   }
 
   /** References a soft value. */
-  static final class WeightedSoftValueReference<K, V> extends SoftValueReference<K, V> {
+  private static final class WeightedSoftValueReference<K, V> extends SoftValueReference<K, V> {
     final int weight;
 
     WeightedSoftValueReference(
@@ -1657,13 +1656,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return new WeightedSoftValueReference<>(queue, value, entry, weight);
     }
   }
 
   /** References a strong value. */
-  static final class WeightedStrongValueReference<K, V> extends StrongValueReference<K, V> {
+  private static final class WeightedStrongValueReference<K, V> extends StrongValueReference<K, V> {
     final int weight;
 
     WeightedStrongValueReference(V referent, int weight) {
@@ -1690,9 +1689,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // using variant of single-word Wang/Jenkins hash.
     // TODO(kevinb): use Hashing/move this to Hashing?
     h += (h << 15) ^ 0xffffcd7d;
-    h ^= (h >>> 10);
-    h += (h << 3);
-    h ^= (h >>> 6);
+    h ^= h >>> 10;
+    h += h << 3;
+    h ^= h >>> 6;
     h += (h << 2) + (h << 14);
     return h ^ (h >>> 16);
   }
@@ -1701,7 +1700,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    * This method is a convenience for testing. Code should call {@link Segment#newEntry} directly.
    */
   @VisibleForTesting
-  ReferenceEntry<K, V> newEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+  ReferenceEntry<K, V> newEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
     Segment<K, V> segment = segmentFor(hash);
     segment.lock();
     try {
@@ -1717,7 +1716,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   // Guarded By Segment.this
   @SuppressWarnings("GuardedBy")
   @VisibleForTesting
-  ReferenceEntry<K, V> copyEntry(ReferenceEntry<K, V> original, ReferenceEntry<K, V> newNext) {
+  ReferenceEntry<K, V> copyEntry(
+      ReferenceEntry<K, V> original, @Nullable ReferenceEntry<K, V> newNext) {
     int hash = original.getHash();
     return segmentFor(hash).copyEntry(original, newNext);
   }
@@ -1732,7 +1732,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     return valueStrength.referenceValue(segmentFor(hash), entry, checkNotNull(value), weight);
   }
 
-  int hash(@CheckForNull Object key) {
+  int hash(@Nullable Object key) {
     int h = keyEquivalence.hash(key);
     return rehash(h);
   }
@@ -1779,8 +1779,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    * up stale entries. As such it should only be called outside a segment context, such as during
    * iteration.
    */
-  @CheckForNull
-  V getLiveValue(ReferenceEntry<K, V> entry, long now) {
+  @Nullable V getLiveValue(ReferenceEntry<K, V> entry, long now) {
     if (entry.getKey() == null) {
       return null;
     }
@@ -1854,8 +1853,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @SuppressWarnings("unchecked")
-  final Segment<K, V>[] newSegmentArray(int ssize) {
-    return new Segment[ssize];
+  Segment<K, V>[] newSegmentArray(int ssize) {
+    return (Segment<K, V>[]) new Segment<?, ?>[ssize];
   }
 
   // Inner Classes
@@ -1865,7 +1864,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    * opportunistically, just to simplify some locking and avoid separate construction.
    */
   @SuppressWarnings("serial") // This class is never serialized.
-  static class Segment<K, V> extends ReentrantLock {
+  static final class Segment<K, V> extends ReentrantLock {
 
     /*
      * TODO(fry): Consider copying variables (like evictsBySize) from outer class into this class.
@@ -1924,7 +1923,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     int threshold;
 
     /** The per-segment table. */
-    @CheckForNull volatile AtomicReferenceArray<ReferenceEntry<K, V>> table;
+    volatile @Nullable AtomicReferenceArray<ReferenceEntry<K, V>> table;
 
     /** The maximum weight of this segment. UNSET_INT if there is no maximum. */
     final long maxSegmentWeight;
@@ -1933,13 +1932,13 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * The key reference queue contains entries whose keys have been garbage collected, and which
      * need to be cleaned up internally.
      */
-    @CheckForNull final ReferenceQueue<K> keyReferenceQueue;
+    final @Nullable ReferenceQueue<K> keyReferenceQueue;
 
     /**
      * The value reference queue contains value references whose values have been garbage collected,
      * and which need to be cleaned up internally.
      */
-    @CheckForNull final ReferenceQueue<V> valueReferenceQueue;
+    final @Nullable ReferenceQueue<V> valueReferenceQueue;
 
     /**
      * The recency queue is used to record which entries were accessed for updating the access
@@ -1985,12 +1984,11 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
       valueReferenceQueue = map.usesValueReferences() ? new ReferenceQueue<>() : null;
 
-      recencyQueue =
-          map.usesAccessQueue() ? new ConcurrentLinkedQueue<>() : LocalCache.discardingQueue();
+      recencyQueue = map.usesAccessQueue() ? new ConcurrentLinkedQueue<>() : discardingQueue();
 
-      writeQueue = map.usesWriteQueue() ? new WriteQueue<>() : LocalCache.discardingQueue();
+      writeQueue = map.usesWriteQueue() ? new WriteQueue<>() : discardingQueue();
 
-      accessQueue = map.usesAccessQueue() ? new AccessQueue<>() : LocalCache.discardingQueue();
+      accessQueue = map.usesAccessQueue() ? new AccessQueue<>() : discardingQueue();
     }
 
     AtomicReferenceArray<ReferenceEntry<K, V>> newEntryArray(int size) {
@@ -2007,7 +2005,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @GuardedBy("this")
-    ReferenceEntry<K, V> newEntry(K key, int hash, @CheckForNull ReferenceEntry<K, V> next) {
+    ReferenceEntry<K, V> newEntry(K key, int hash, @Nullable ReferenceEntry<K, V> next) {
       return map.entryFactory.newEntry(this, checkNotNull(key), hash, next);
     }
 
@@ -2015,9 +2013,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * Copies {@code original} into a new entry chained to {@code newNext}. Returns the new entry,
      * or {@code null} if {@code original} was already garbage collected.
      */
-    @CheckForNull
     @GuardedBy("this")
-    ReferenceEntry<K, V> copyEntry(ReferenceEntry<K, V> original, ReferenceEntry<K, V> newNext) {
+    @Nullable ReferenceEntry<K, V> copyEntry(
+        ReferenceEntry<K, V> original, @Nullable ReferenceEntry<K, V> newNext) {
       K key = original.getKey();
       if (key == null) {
         // key collected
@@ -2090,8 +2088,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       }
     }
 
-    @CheckForNull
-    V get(Object key, int hash) {
+    @Nullable V get(Object key, int hash) {
       try {
         if (count != 0) { // read-volatile
           long now = map.ticker.read();
@@ -2219,7 +2216,10 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       }
     }
 
-    V compute(K key, int hash, BiFunction<? super K, ? super @Nullable V, ? extends V> function) {
+    @Nullable V compute(
+        K key,
+        int hash,
+        BiFunction<? super K, ? super @Nullable V, ? extends @Nullable V> function) {
       ReferenceEntry<K, V> e;
       ValueReference<K, V> valueReference = null;
       ComputingValueReference<K, V> computingValueReference = null;
@@ -2265,6 +2265,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
         // the value for the key is already being computed.
         computingValueReference = new ComputingValueReference<>(valueReference);
 
+        // Compute the value now, so if it throws an exception we don't change anything.
+        newValue = computingValueReference.compute(key, function);
+
         if (e == null) {
           createNewEntry = true;
           e = newEntry(key, hash, first);
@@ -2274,7 +2277,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
           e.setValueReference(computingValueReference);
         }
 
-        newValue = computingValueReference.compute(key, function);
         if (newValue != null) {
           if (valueReference != null && newValue == valueReference.get()) {
             computingValueReference.set(newValue);
@@ -2283,8 +2285,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
             return newValue;
           }
           try {
-            return getAndRecordStats(
-                key, hash, computingValueReference, Futures.immediateFuture(newValue));
+            return getAndRecordStats(key, hash, computingValueReference, immediateFuture(newValue));
           } catch (ExecutionException exception) {
             throw new AssertionError("impossible; Futures.immediateFuture can't throw");
           }
@@ -2314,11 +2315,11 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     ListenableFuture<V> loadAsync(
-        final K key,
-        final int hash,
-        final LoadingValueReference<K, V> loadingValueReference,
+        K key,
+        int hash,
+        LoadingValueReference<K, V> loadingValueReference,
         CacheLoader<? super K, V> loader) {
-      final ListenableFuture<V> loadingFuture = loadingValueReference.loadFuture(key, loader);
+      ListenableFuture<V> loadingFuture = loadingValueReference.loadFuture(key, loader);
       loadingFuture.addListener(
           () -> {
             try {
@@ -2363,10 +2364,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
         int hash,
         V oldValue,
         long now,
-        CacheLoader<? super K, V> loader) {
+        @Nullable CacheLoader<? super K, V> loader) {
       if (map.refreshes()
           && (now - entry.getWriteTime() > map.refreshNanos)
           && !entry.getValueReference().isLoading()) {
+        // Since refreshes() is set, checkNonLoadingCache() would've thrown for a non-loading cache.
+        requireNonNull(loader);
         V newValue = refresh(key, hash, loader, true);
         if (newValue != null) {
           return newValue;
@@ -2382,9 +2385,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * refresh.
      */
     @CanIgnoreReturnValue
-    @CheckForNull
-    V refresh(K key, int hash, CacheLoader<? super K, V> loader, boolean checkTime) {
-      final LoadingValueReference<K, V> loadingValueReference =
+    @Nullable V refresh(K key, int hash, CacheLoader<? super K, V> loader, boolean checkTime) {
+      LoadingValueReference<K, V> loadingValueReference =
           insertLoadingValueReference(key, hash, checkTime);
       if (loadingValueReference == null) {
         return null;
@@ -2393,7 +2395,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       ListenableFuture<V> result = loadAsync(key, hash, loadingValueReference, loader);
       if (result.isDone()) {
         try {
-          return Uninterruptibles.getUninterruptibly(result);
+          return getUninterruptibly(result);
         } catch (Throwable t) {
           // don't let refresh exceptions propagate; error was already logged
         }
@@ -2405,10 +2407,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * Returns a newly inserted {@code LoadingValueReference}, or null if the live value reference
      * is already loading.
      */
-    @CheckForNull
-    LoadingValueReference<K, V> insertLoadingValueReference(
-        final K key, final int hash, boolean checkTime) {
-      ReferenceEntry<K, V> e = null;
+    @Nullable LoadingValueReference<K, V> insertLoadingValueReference(
+        K key, int hash, boolean checkTime) {
+      ReferenceEntry<K, V> e;
       lock();
       try {
         long now = map.ticker.read();
@@ -2635,7 +2636,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     @GuardedBy("this")
     void enqueueNotification(
-        @CheckForNull K key, int hash, @CheckForNull V value, int weight, RemovalCause cause) {
+        @Nullable K key, int hash, @Nullable V value, int weight, RemovalCause cause) {
       totalWeight -= weight;
       if (cause.wasEvicted()) {
         statsCounter.recordEviction();
@@ -2689,7 +2690,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     /** Returns first entry of bin for given hash. */
-    ReferenceEntry<K, V> getFirst(int hash) {
+    @Nullable ReferenceEntry<K, V> getFirst(int hash) {
       // read this volatile field only once
       AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
       return table.get(hash & (table.length() - 1));
@@ -2697,8 +2698,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     // Specialized implementations of map methods
 
-    @CheckForNull
-    ReferenceEntry<K, V> getEntry(Object key, int hash) {
+    @Nullable ReferenceEntry<K, V> getEntry(Object key, int hash) {
       for (ReferenceEntry<K, V> e = getFirst(hash); e != null; e = e.getNext()) {
         if (e.getHash() != hash) {
           continue;
@@ -2718,8 +2718,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       return null;
     }
 
-    @CheckForNull
-    ReferenceEntry<K, V> getLiveEntry(Object key, int hash, long now) {
+    @Nullable ReferenceEntry<K, V> getLiveEntry(Object key, int hash, long now) {
       ReferenceEntry<K, V> e = getEntry(key, hash);
       if (e == null) {
         return null;
@@ -2734,7 +2733,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * Gets the value from an entry. Returns null if the entry is invalid, partially-collected,
      * loading, or expired.
      */
-    V getLiveValue(ReferenceEntry<K, V> entry, long now) {
+    @Nullable V getLiveValue(ReferenceEntry<K, V> entry, long now) {
       if (entry.getKey() == null) {
         tryDrainReferenceQueues();
         return null;
@@ -2800,17 +2799,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @CanIgnoreReturnValue
-    @CheckForNull
-    V put(K key, int hash, V value, boolean onlyIfAbsent) {
+    @Nullable V put(K key, int hash, V value, boolean onlyIfAbsent) {
       lock();
       try {
         long now = map.ticker.read();
         preWriteCleanup(now);
 
-        int newCount = this.count + 1;
-        if (newCount > this.threshold) { // ensure capacity
+        if (this.count + 1 > this.threshold) { // ensure capacity
           expand();
-          newCount = this.count + 1;
         }
 
         AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
@@ -2830,6 +2826,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
             if (entryValue == null) {
               ++modCount;
+              int newCount;
               if (valueReference.isActive()) {
                 enqueueNotification(
                     key, hash, entryValue, valueReference.getWeight(), RemovalCause.COLLECTED);
@@ -2865,8 +2862,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
         ReferenceEntry<K, V> newEntry = newEntry(key, hash, first);
         setValue(newEntry, key, value, now);
         table.set(index, newEntry);
-        newCount = this.count + 1;
-        this.count = newCount; // write-volatile
+        this.count++; // write-volatile
         evictEntries(newEntry);
         return null;
       } finally {
@@ -2965,7 +2961,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
             if (entryValue == null) {
               if (valueReference.isActive()) {
                 // If the value disappeared, this entry is partially collected.
-                int newCount = this.count - 1;
                 ++modCount;
                 ReferenceEntry<K, V> newFirst =
                     removeValueFromChain(
@@ -2976,9 +2971,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
                         entryValue,
                         valueReference,
                         RemovalCause.COLLECTED);
-                newCount = this.count - 1;
                 table.set(index, newFirst);
-                this.count = newCount; // write-volatile
+                this.count--; // write-volatile
               }
               return false;
             }
@@ -3006,8 +3000,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       }
     }
 
-    @CheckForNull
-    V replace(K key, int hash, V newValue) {
+    @Nullable V replace(K key, int hash, V newValue) {
       lock();
       try {
         long now = map.ticker.read();
@@ -3027,7 +3020,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
             if (entryValue == null) {
               if (valueReference.isActive()) {
                 // If the value disappeared, this entry is partially collected.
-                int newCount = this.count - 1;
                 ++modCount;
                 ReferenceEntry<K, V> newFirst =
                     removeValueFromChain(
@@ -3038,9 +3030,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
                         entryValue,
                         valueReference,
                         RemovalCause.COLLECTED);
-                newCount = this.count - 1;
                 table.set(index, newFirst);
-                this.count = newCount; // write-volatile
+                this.count--; // write-volatile
               }
               return null;
             }
@@ -3061,14 +3052,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       }
     }
 
-    @CheckForNull
-    V remove(Object key, int hash) {
+    @Nullable V remove(Object key, int hash) {
       lock();
       try {
         long now = map.ticker.read();
         preWriteCleanup(now);
 
-        int newCount = this.count - 1;
         AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
         int index = hash & (table.length() - 1);
         ReferenceEntry<K, V> first = table.get(index);
@@ -3094,9 +3083,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
             ++modCount;
             ReferenceEntry<K, V> newFirst =
                 removeValueFromChain(first, e, entryKey, hash, entryValue, valueReference, cause);
-            newCount = this.count - 1;
             table.set(index, newFirst);
-            this.count = newCount; // write-volatile
+            this.count--; // write-volatile
             return entryValue;
           }
         }
@@ -3114,7 +3102,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
         long now = map.ticker.read();
         preWriteCleanup(now);
 
-        int newCount = this.count - 1;
         AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
         int index = hash & (table.length() - 1);
         ReferenceEntry<K, V> first = table.get(index);
@@ -3140,9 +3127,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
             ++modCount;
             ReferenceEntry<K, V> newFirst =
                 removeValueFromChain(first, e, entryKey, hash, entryValue, valueReference, cause);
-            newCount = this.count - 1;
             table.set(index, newFirst);
-            this.count = newCount; // write-volatile
+            this.count--; // write-volatile
             return (cause == RemovalCause.EXPLICIT);
           }
         }
@@ -3254,13 +3240,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @GuardedBy("this")
-    @CheckForNull
-    ReferenceEntry<K, V> removeValueFromChain(
+    @Nullable ReferenceEntry<K, V> removeValueFromChain(
         ReferenceEntry<K, V> first,
         ReferenceEntry<K, V> entry,
-        @CheckForNull K key,
+        @Nullable K key,
         int hash,
-        V value,
+        @Nullable V value,
         ValueReference<K, V> valueReference,
         RemovalCause cause) {
       enqueueNotification(key, hash, value, valueReference.getWeight(), cause);
@@ -3276,8 +3261,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @GuardedBy("this")
-    @CheckForNull
-    ReferenceEntry<K, V> removeEntryFromChain(
+    @Nullable ReferenceEntry<K, V> removeEntryFromChain(
         ReferenceEntry<K, V> first, ReferenceEntry<K, V> entry) {
       int newCount = count;
       ReferenceEntry<K, V> newFirst = entry.getNext();
@@ -3311,7 +3295,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     boolean reclaimKey(ReferenceEntry<K, V> entry, int hash) {
       lock();
       try {
-        int newCount = count - 1;
         AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
         int index = hash & (table.length() - 1);
         ReferenceEntry<K, V> first = table.get(index);
@@ -3328,9 +3311,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
                     e.getValueReference().get(),
                     e.getValueReference(),
                     RemovalCause.COLLECTED);
-            newCount = this.count - 1;
             table.set(index, newFirst);
-            this.count = newCount; // write-volatile
+            this.count--; // write-volatile
             return true;
           }
         }
@@ -3344,10 +3326,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     /** Removes an entry whose value has been garbage collected. */
     @CanIgnoreReturnValue
-    boolean reclaimValue(K key, int hash, ValueReference<K, V> valueReference) {
+    boolean reclaimValue(@Nullable K key, int hash, ValueReference<K, V> valueReference) {
       lock();
       try {
-        int newCount = this.count - 1;
         AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
         int index = hash & (table.length() - 1);
         ReferenceEntry<K, V> first = table.get(index);
@@ -3369,9 +3350,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
                       valueReference.get(),
                       valueReference,
                       RemovalCause.COLLECTED);
-              newCount = this.count - 1;
               table.set(index, newFirst);
-              this.count = newCount; // write-volatile
+              this.count--; // write-volatile
               return true;
             }
             return false;
@@ -3425,7 +3405,6 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     @GuardedBy("this")
     @CanIgnoreReturnValue
     boolean removeEntry(ReferenceEntry<K, V> entry, int hash, RemovalCause cause) {
-      int newCount = this.count - 1;
       AtomicReferenceArray<ReferenceEntry<K, V>> table = this.table;
       int index = hash & (table.length() - 1);
       ReferenceEntry<K, V> first = table.get(index);
@@ -3442,9 +3421,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
                   e.getValueReference().get(),
                   e.getValueReference(),
                   cause);
-          newCount = this.count - 1;
           table.set(index, newFirst);
-          this.count = newCount; // write-volatile
+          this.count--; // write-volatile
           return true;
         }
       }
@@ -3515,8 +3493,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       this(null);
     }
 
-    public LoadingValueReference(ValueReference<K, V> oldValue) {
-      this.oldValue = (oldValue == null) ? LocalCache.unset() : oldValue;
+    public LoadingValueReference(@Nullable ValueReference<K, V> oldValue) {
+      this.oldValue = (oldValue == null) ? unset() : oldValue;
     }
 
     @Override
@@ -3525,31 +3503,31 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean isActive() {
+    public final boolean isActive() {
       return oldValue.isActive();
     }
 
     @Override
-    public int getWeight() {
+    public final int getWeight() {
       return oldValue.getWeight();
     }
 
     @CanIgnoreReturnValue
-    public boolean set(@CheckForNull V newValue) {
+    public final boolean set(@Nullable V newValue) {
       return futureValue.set(newValue);
     }
 
     @CanIgnoreReturnValue
-    public boolean setException(Throwable t) {
+    public final boolean setException(Throwable t) {
       return futureValue.setException(t);
     }
 
     private ListenableFuture<V> fullyFailedFuture(Throwable t) {
-      return Futures.immediateFailedFuture(t);
+      return immediateFailedFuture(t);
     }
 
     @Override
-    public void notifyNewValue(@CheckForNull V newValue) {
+    public void notifyNewValue(@Nullable V newValue) {
       if (newValue != null) {
         // The pending load was clobbered by a manual write.
         // Unblock all pending gets, and have them return the new value.
@@ -3562,17 +3540,17 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       // TODO(fry): could also cancel loading if we had a handle on its future
     }
 
-    public ListenableFuture<V> loadFuture(K key, CacheLoader<? super K, V> loader) {
+    public final ListenableFuture<V> loadFuture(K key, CacheLoader<? super K, V> loader) {
       try {
         stopwatch.start();
         V previousValue = oldValue.get();
         if (previousValue == null) {
           V newValue = loader.load(key);
-          return set(newValue) ? futureValue : Futures.immediateFuture(newValue);
+          return set(newValue) ? futureValue : immediateFuture(newValue);
         }
         ListenableFuture<V> newValue = loader.reload(key, previousValue);
         if (newValue == null) {
-          return Futures.immediateFuture(null);
+          return immediateFuture(null);
         }
         // To avoid a race, make sure the refreshed value is set into loadingValueReference
         // *before* returning newValue from the cache query.
@@ -3592,7 +3570,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       }
     }
 
-    public V compute(K key, BiFunction<? super K, ? super @Nullable V, ? extends V> function) {
+    public final @Nullable V compute(
+        K key, BiFunction<? super K, ? super @Nullable V, ? extends @Nullable V> function) {
       stopwatch.start();
       V previousValue;
       try {
@@ -3600,49 +3579,43 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       } catch (ExecutionException e) {
         previousValue = null;
       }
-      V newValue;
-      try {
-        newValue = function.apply(key, previousValue);
-      } catch (Throwable th) {
-        this.setException(th);
-        throw th;
-      }
+      V newValue = function.apply(key, previousValue);
       this.set(newValue);
       return newValue;
     }
 
-    public long elapsedNanos() {
+    public final long elapsedNanos() {
       return stopwatch.elapsed(NANOSECONDS);
     }
 
     @Override
-    public V waitForValue() throws ExecutionException {
+    public @Nullable V waitForValue() throws ExecutionException {
       return getUninterruptibly(futureValue);
     }
 
     @Override
-    public V get() {
+    public @Nullable V get() {
       return oldValue.get();
     }
 
-    public ValueReference<K, V> getOldValue() {
+    public final ValueReference<K, V> getOldValue() {
       return oldValue;
     }
 
     @Override
-    public ReferenceEntry<K, V> getEntry() {
+    public @Nullable ReferenceEntry<K, V> getEntry() {
       return null;
     }
 
     @Override
     public ValueReference<K, V> copyFor(
-        ReferenceQueue<V> queue, @CheckForNull V value, ReferenceEntry<K, V> entry) {
+        @Nullable ReferenceQueue<V> queue, @Nullable V value, ReferenceEntry<K, V> entry) {
       return this;
     }
   }
 
-  static class ComputingValueReference<K, V> extends LoadingValueReference<K, V> {
-    ComputingValueReference(ValueReference<K, V> oldValue) {
+  private static final class ComputingValueReference<K, V> extends LoadingValueReference<K, V> {
+    ComputingValueReference(@Nullable ValueReference<K, V> oldValue) {
       super(oldValue);
     }
 
@@ -3716,16 +3689,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       return true;
     }
 
-    @CheckForNull
     @Override
-    public ReferenceEntry<K, V> peek() {
+    public @Nullable ReferenceEntry<K, V> peek() {
       ReferenceEntry<K, V> next = head.getNextInWriteQueue();
       return (next == head) ? null : next;
     }
 
-    @CheckForNull
     @Override
-    public ReferenceEntry<K, V> poll() {
+    public @Nullable ReferenceEntry<K, V> poll() {
       ReferenceEntry<K, V> next = head.getNextInWriteQueue();
       if (next == head) {
         return null;
@@ -3787,9 +3758,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     @Override
     public Iterator<ReferenceEntry<K, V>> iterator() {
       return new AbstractSequentialIterator<ReferenceEntry<K, V>>(peek()) {
-        @CheckForNull
         @Override
-        protected ReferenceEntry<K, V> computeNext(ReferenceEntry<K, V> previous) {
+        protected @Nullable ReferenceEntry<K, V> computeNext(ReferenceEntry<K, V> previous) {
           ReferenceEntry<K, V> next = previous.getNextInWriteQueue();
           return (next == head) ? null : next;
         }
@@ -3859,16 +3829,14 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       return true;
     }
 
-    @CheckForNull
     @Override
-    public ReferenceEntry<K, V> peek() {
+    public @Nullable ReferenceEntry<K, V> peek() {
       ReferenceEntry<K, V> next = head.getNextInAccessQueue();
       return (next == head) ? null : next;
     }
 
-    @CheckForNull
     @Override
-    public ReferenceEntry<K, V> poll() {
+    public @Nullable ReferenceEntry<K, V> poll() {
       ReferenceEntry<K, V> next = head.getNextInAccessQueue();
       if (next == head) {
         return null;
@@ -3930,9 +3898,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     @Override
     public Iterator<ReferenceEntry<K, V>> iterator() {
       return new AbstractSequentialIterator<ReferenceEntry<K, V>>(peek()) {
-        @CheckForNull
         @Override
-        protected ReferenceEntry<K, V> computeNext(ReferenceEntry<K, V> previous) {
+        protected @Nullable ReferenceEntry<K, V> computeNext(ReferenceEntry<K, V> previous) {
           ReferenceEntry<K, V> next = previous.getNextInAccessQueue();
           return (next == head) ? null : next;
         }
@@ -3942,7 +3909,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
   // Cache support
 
-  public void cleanUp() {
+  void cleanUp() {
     for (Segment<?, ?> segment : segments) {
       segment.cleanUp();
     }
@@ -3996,8 +3963,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
   @CanIgnoreReturnValue // TODO(b/27479612): consider removing this
   @Override
-  @CheckForNull
-  public V get(@CheckForNull Object key) {
+  public @Nullable V get(@Nullable Object key) {
     if (key == null) {
       return null;
     }
@@ -4011,8 +3977,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     return segmentFor(hash).get(key, hash, loader);
   }
 
-  @CheckForNull
-  public V getIfPresent(Object key) {
+  @Nullable V getIfPresent(Object key) {
     int hash = hash(checkNotNull(key));
     V value = segmentFor(hash).get(key, hash);
     if (value == null) {
@@ -4024,8 +3989,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @Override
-  @CheckForNull
-  public V getOrDefault(@CheckForNull Object key, @CheckForNull V defaultValue) {
+  public @Nullable V getOrDefault(@Nullable Object key, @Nullable V defaultValue) {
     V result = get(key);
     return (result != null) ? result : defaultValue;
   }
@@ -4060,8 +4024,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     int hits = 0;
     int misses = 0;
 
-    Map<K, V> result = Maps.newLinkedHashMap();
-    Set<K> keysToLoad = Sets.newLinkedHashSet();
+    Map<K, V> result = new LinkedHashMap<>();
+    Set<K> keysToLoad = new LinkedHashSet<>();
     for (K key : keys) {
       V value = get(key);
       if (!result.containsKey(key)) {
@@ -4101,11 +4065,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  /**
-   * Returns the result of calling {@link CacheLoader#loadAll}, or null if {@code loader} doesn't
-   * implement {@code loadAll}.
-   */
-  @CheckForNull
+  /** Returns the result of calling {@link CacheLoader#loadAll}. */
   Map<K, V> loadAll(Set<? extends K> keys, CacheLoader<? super K, V> loader)
       throws ExecutionException {
     checkNotNull(loader);
@@ -4169,8 +4129,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    * Returns the internal entry for the specified key. The entry may be loading, expired, or
    * partially collected.
    */
-  @CheckForNull
-  ReferenceEntry<K, V> getEntry(@CheckForNull Object key) {
+  @Nullable ReferenceEntry<K, V> getEntry(@Nullable Object key) {
     // does not impact recency ordering
     if (key == null) {
       return null;
@@ -4185,7 +4144,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @Override
-  public boolean containsKey(@CheckForNull Object key) {
+  public boolean containsKey(@Nullable Object key) {
     // does not impact recency ordering
     if (key == null) {
       return false;
@@ -4195,7 +4154,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @Override
-  public boolean containsValue(@CheckForNull Object value) {
+  public boolean containsValue(@Nullable Object value) {
     // does not impact recency ordering
     if (value == null) {
       return false;
@@ -4207,7 +4166,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // in time it was present somewhere int the map. This becomes increasingly unlikely as
     // CONTAINS_VALUE_RETRIES increases, though without locking it is theoretically possible.
     long now = ticker.read();
-    final Segment<K, V>[] segments = this.segments;
+    Segment<K, V>[] segments = this.segments;
     long last = -1L;
     for (int i = 0; i < CONTAINS_VALUE_RETRIES; i++) {
       long sum = 0L;
@@ -4234,19 +4193,17 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     return false;
   }
 
-  @CheckForNull
   @CanIgnoreReturnValue
   @Override
-  public V put(K key, V value) {
+  public @Nullable V put(K key, V value) {
     checkNotNull(key);
     checkNotNull(value);
     int hash = hash(key);
     return segmentFor(hash).put(key, hash, value, false);
   }
 
-  @CheckForNull
   @Override
-  public V putIfAbsent(K key, V value) {
+  public @Nullable V putIfAbsent(K key, V value) {
     checkNotNull(key);
     checkNotNull(value);
     int hash = hash(key);
@@ -4254,7 +4211,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @Override
-  public V compute(K key, BiFunction<? super K, ? super @Nullable V, ? extends V> function) {
+  public @Nullable V compute(
+      K key, BiFunction<? super K, ? super @Nullable V, ? extends @Nullable V> function) {
     checkNotNull(key);
     checkNotNull(function);
     int hash = hash(key);
@@ -4269,14 +4227,16 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   @Override
-  public V computeIfPresent(K key, BiFunction<? super K, ? super V, ? extends V> function) {
+  public @Nullable V computeIfPresent(
+      K key, BiFunction<? super K, ? super V, ? extends @Nullable V> function) {
     checkNotNull(key);
     checkNotNull(function);
     return compute(key, (k, oldValue) -> (oldValue == null) ? null : function.apply(k, oldValue));
   }
 
   @Override
-  public V merge(K key, V newValue, BiFunction<? super V, ? super V, ? extends V> function) {
+  public @Nullable V merge(
+      K key, V newValue, BiFunction<? super V, ? super V, ? extends @Nullable V> function) {
     checkNotNull(key);
     checkNotNull(newValue);
     checkNotNull(function);
@@ -4291,10 +4251,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  @CheckForNull
   @CanIgnoreReturnValue
   @Override
-  public V remove(@CheckForNull Object key) {
+  public @Nullable V remove(@Nullable Object key) {
     if (key == null) {
       return null;
     }
@@ -4304,7 +4263,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
   @CanIgnoreReturnValue
   @Override
-  public boolean remove(@CheckForNull Object key, @CheckForNull Object value) {
+  public boolean remove(@Nullable Object key, @Nullable Object value) {
     if (key == null || value == null) {
       return false;
     }
@@ -4314,7 +4273,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
   @CanIgnoreReturnValue
   @Override
-  public boolean replace(K key, @CheckForNull V oldValue, V newValue) {
+  public boolean replace(K key, @Nullable V oldValue, V newValue) {
     checkNotNull(key);
     checkNotNull(newValue);
     if (oldValue == null) {
@@ -4324,10 +4283,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     return segmentFor(hash).replace(key, hash, oldValue, newValue);
   }
 
-  @CheckForNull
   @CanIgnoreReturnValue
   @Override
-  public V replace(K key, V value) {
+  public @Nullable V replace(K key, V value) {
     checkNotNull(key);
     checkNotNull(value);
     int hash = hash(key);
@@ -4348,32 +4306,41 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  @RetainedWith @CheckForNull Set<K> keySet;
+  @LazyInit @RetainedWith @Nullable Set<K> keySet;
 
   @Override
   public Set<K> keySet() {
     // does not impact recency ordering
-    Set<K> ks = keySet;
-    return (ks != null) ? ks : (keySet = new KeySet());
+    Set<K> result = keySet;
+    if (result == null) {
+      result = keySet = new KeySet();
+    }
+    return result;
   }
 
-  @RetainedWith @CheckForNull Collection<V> values;
+  @LazyInit @RetainedWith @Nullable Collection<V> values;
 
   @Override
   public Collection<V> values() {
     // does not impact recency ordering
-    Collection<V> vs = values;
-    return (vs != null) ? vs : (values = new Values());
+    Collection<V> result = values;
+    if (result == null) {
+      result = values = new Values();
+    }
+    return result;
   }
 
-  @RetainedWith @CheckForNull Set<Entry<K, V>> entrySet;
+  @LazyInit @RetainedWith @Nullable Set<Entry<K, V>> entrySet;
 
   @Override
   @GwtIncompatible // Not supported.
   public Set<Entry<K, V>> entrySet() {
     // does not impact recency ordering
-    Set<Entry<K, V>> es = entrySet;
-    return (es != null) ? es : (entrySet = new EntrySet());
+    Set<Entry<K, V>> result = entrySet;
+    if (result == null) {
+      result = entrySet = new EntrySet();
+    }
+    return result;
   }
 
   // Iterator Support
@@ -4382,11 +4349,11 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     int nextSegmentIndex;
     int nextTableIndex;
-    @CheckForNull Segment<K, V> currentSegment;
-    @CheckForNull AtomicReferenceArray<ReferenceEntry<K, V>> currentTable;
-    @CheckForNull ReferenceEntry<K, V> nextEntry;
-    @CheckForNull WriteThroughEntry nextExternal;
-    @CheckForNull WriteThroughEntry lastReturned;
+    @Nullable Segment<K, V> currentSegment;
+    @Nullable AtomicReferenceArray<ReferenceEntry<K, V>> currentTable;
+    @Nullable ReferenceEntry<K, V> nextEntry;
+    @Nullable WriteThroughEntry nextExternal;
+    @Nullable WriteThroughEntry lastReturned;
 
     HashIterator() {
       nextSegmentIndex = segments.length - 1;
@@ -4421,7 +4388,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     /** Finds the next entry in the current chain. Returns true if an entry was found. */
-    boolean nextInChain() {
+    final boolean nextInChain() {
       if (nextEntry != null) {
         for (nextEntry = nextEntry.getNext(); nextEntry != null; nextEntry = nextEntry.getNext()) {
           if (advanceTo(nextEntry)) {
@@ -4433,7 +4400,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     /** Finds the next entry in the current table. Returns true if an entry was found. */
-    boolean nextInTable() {
+    final boolean nextInTable() {
       while (nextTableIndex >= 0) {
         if ((nextEntry = currentTable.get(nextTableIndex--)) != null) {
           if (advanceTo(nextEntry) || nextInChain()) {
@@ -4448,7 +4415,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
      * Advances to the given entry. Returns true if the entry was valid, false if it should be
      * skipped.
      */
-    boolean advanceTo(ReferenceEntry<K, V> entry) {
+    final boolean advanceTo(ReferenceEntry<K, V> entry) {
       try {
         long now = ticker.read();
         K key = entry.getKey();
@@ -4466,11 +4433,11 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean hasNext() {
+    public final boolean hasNext() {
       return nextExternal != null;
     }
 
-    WriteThroughEntry nextEntry() {
+    final WriteThroughEntry nextEntry() {
       if (nextExternal == null) {
         throw new NoSuchElementException();
       }
@@ -4480,7 +4447,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public void remove() {
+    public final void remove() {
       checkState(lastReturned != null);
       LocalCache.this.remove(lastReturned.getKey());
       lastReturned = null;
@@ -4527,7 +4494,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       // Cannot use key and value equivalence
       if (object instanceof Entry) {
         Entry<?, ?> that = (Entry<?, ?>) object;
@@ -4565,39 +4532,19 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
   abstract class AbstractCacheSet<T> extends AbstractSet<T> {
     @Override
-    public int size() {
+    public final int size() {
       return LocalCache.this.size();
     }
 
     @Override
-    public boolean isEmpty() {
+    public final boolean isEmpty() {
       return LocalCache.this.isEmpty();
     }
 
     @Override
-    public void clear() {
+    public final void clear() {
       LocalCache.this.clear();
     }
-
-    // super.toArray() may misbehave if size() is inaccurate, at least on old versions of Android.
-    // https://code.google.com/p/android/issues/detail?id=36519 / http://r.android.com/47508
-
-    @Override
-    public Object[] toArray() {
-      return toArrayList(this).toArray();
-    }
-
-    @Override
-    public <E> E[] toArray(E[] a) {
-      return toArrayList(this).toArray(a);
-    }
-  }
-
-  private static <E> ArrayList<E> toArrayList(Collection<E> c) {
-    // Avoid calling ArrayList(Collection), which may call back into toArray.
-    ArrayList<E> result = new ArrayList<>(c.size());
-    Iterators.addAll(result, c.iterator());
-    return result;
   }
 
   boolean removeIf(BiPredicate<? super K, ? super V> filter) {
@@ -4625,12 +4572,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean contains(Object o) {
+    public boolean contains(@Nullable Object o) {
       return LocalCache.this.containsKey(o);
     }
 
     @Override
-    public boolean remove(Object o) {
+    public boolean remove(@Nullable Object o) {
       return LocalCache.this.remove(o) != null;
     }
   }
@@ -4663,21 +4610,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean contains(Object o) {
+    public boolean contains(@Nullable Object o) {
       return LocalCache.this.containsValue(o);
-    }
-
-    // super.toArray() may misbehave if size() is inaccurate, at least on old versions of Android.
-    // https://code.google.com/p/android/issues/detail?id=36519 / http://r.android.com/47508
-
-    @Override
-    public Object[] toArray() {
-      return toArrayList(this).toArray();
-    }
-
-    @Override
-    public <E> E[] toArray(E[] a) {
-      return toArrayList(this).toArray(a);
     }
   }
 
@@ -4691,11 +4625,11 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     @Override
     public boolean removeIf(Predicate<? super Entry<K, V>> filter) {
       checkNotNull(filter);
-      return LocalCache.this.removeIf((k, v) -> filter.test(Maps.immutableEntry(k, v)));
+      return LocalCache.this.removeIf((k, v) -> filter.test(immutableEntry(k, v)));
     }
 
     @Override
-    public boolean contains(Object o) {
+    public boolean contains(@Nullable Object o) {
       if (!(o instanceof Entry)) {
         return false;
       }
@@ -4710,13 +4644,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public boolean remove(Object o) {
+    public boolean remove(@Nullable Object o) {
       if (!(o instanceof Entry)) {
         return false;
       }
       Entry<?, ?> e = (Entry<?, ?>) o;
-      Object key = e.getKey();
-      return key != null && LocalCache.this.remove(key, e.getValue());
+      return LocalCache.this.remove(e.getKey(), e.getValue());
     }
   }
 
@@ -4730,9 +4663,9 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
    * <p>Unfortunately, readResolve() doesn't get called when a circular dependency is present, so
    * the proxy must be able to behave as the cache itself.
    */
-  static class ManualSerializationProxy<K, V> extends ForwardingCache<K, V>
+  private static class ManualSerializationProxy<K, V> extends ForwardingCache<K, V>
       implements Serializable {
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
 
     final Strength keyStrength;
     final Strength valueStrength;
@@ -4744,10 +4677,10 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     final Weigher<K, V> weigher;
     final int concurrencyLevel;
     final RemovalListener<? super K, ? super V> removalListener;
-    @CheckForNull final Ticker ticker;
-    final CacheLoader<? super K, V> loader;
+    final @Nullable Ticker ticker;
+    final @Nullable CacheLoader<? super K, V> loader;
 
-    @CheckForNull transient Cache<K, V> delegate;
+    transient @Nullable Cache<K, V> delegate;
 
     ManualSerializationProxy(LocalCache<K, V> cache) {
       this(
@@ -4776,8 +4709,8 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
         Weigher<K, V> weigher,
         int concurrencyLevel,
         RemovalListener<? super K, ? super V> removalListener,
-        Ticker ticker,
-        CacheLoader<? super K, V> loader) {
+        @Nullable Ticker ticker,
+        @Nullable CacheLoader<? super K, V> loader) {
       this.keyStrength = keyStrength;
       this.valueStrength = valueStrength;
       this.keyEquivalence = keyEquivalence;
@@ -4792,21 +4725,21 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       this.loader = loader;
     }
 
-    CacheBuilder<K, V> recreateCacheBuilder() {
+    final CacheBuilder<K, V> recreateCacheBuilder() {
       CacheBuilder<K, V> builder =
           CacheBuilder.newBuilder()
               .setKeyStrength(keyStrength)
               .setValueStrength(valueStrength)
               .keyEquivalence(keyEquivalence)
               .valueEquivalence(valueEquivalence)
-              .concurrencyLevel(concurrencyLevel)
+              .concurrencyLevel(min(concurrencyLevel, 1024))
               .removalListener(removalListener);
       builder.strictParsing = false;
       if (expireAfterWriteNanos > 0) {
-        builder.expireAfterWrite(expireAfterWriteNanos, TimeUnit.NANOSECONDS);
+        builder.expireAfterWrite(expireAfterWriteNanos, NANOSECONDS);
       }
       if (expireAfterAccessNanos > 0) {
-        builder.expireAfterAccess(expireAfterAccessNanos, TimeUnit.NANOSECONDS);
+        builder.expireAfterAccess(expireAfterAccessNanos, NANOSECONDS);
       }
       if (weigher != OneWeigher.INSTANCE) {
         Object unused = builder.weigher(weigher);
@@ -4841,18 +4774,18 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
   }
 
   /**
-   * Serializes the configuration of a LocalCache, reconstituting it as an LoadingCache using
+   * Serializes the configuration of a LocalCache, reconstituting it as a LoadingCache using
    * CacheBuilder upon deserialization. An instance of this class is fit for use by the writeReplace
    * of LocalLoadingCache.
    *
    * <p>Unfortunately, readResolve() doesn't get called when a circular dependency is present, so
    * the proxy must be able to behave as the cache itself.
    */
-  static final class LoadingSerializationProxy<K, V> extends ManualSerializationProxy<K, V>
-      implements LoadingCache<K, V>, Serializable {
-    private static final long serialVersionUID = 1;
+  private static final class LoadingSerializationProxy<K, V> extends ManualSerializationProxy<K, V>
+      implements LoadingCache<K, V> {
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
 
-    @CheckForNull transient LoadingCache<K, V> autoDelegate;
+    transient @Nullable LoadingCache<K, V> autoDelegate;
 
     LoadingSerializationProxy(LocalCache<K, V> cache) {
       super(cache);
@@ -4908,13 +4841,12 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     // Cache methods
 
     @Override
-    @CheckForNull
-    public V getIfPresent(Object key) {
+    public final @Nullable V getIfPresent(Object key) {
       return localCache.getIfPresent(key);
     }
 
     @Override
-    public V get(K key, final Callable<? extends V> valueLoader) throws ExecutionException {
+    public V get(K key, Callable<? extends V> valueLoader) throws ExecutionException {
       checkNotNull(valueLoader);
       return localCache.get(
           key,
@@ -4942,7 +4874,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public void invalidate(Object key) {
+    public final void invalidate(Object key) {
       checkNotNull(key);
       localCache.remove(key);
     }
@@ -4953,22 +4885,22 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
 
     @Override
-    public void invalidateAll() {
+    public final void invalidateAll() {
       localCache.clear();
     }
 
     @Override
-    public long size() {
+    public final long size() {
       return localCache.longSize();
     }
 
     @Override
-    public ConcurrentMap<K, V> asMap() {
+    public final ConcurrentMap<K, V> asMap() {
       return localCache;
     }
 
     @Override
-    public CacheStats stats() {
+    public final CacheStats stats() {
       SimpleStatsCounter aggregator = new SimpleStatsCounter();
       aggregator.incrementBy(localCache.globalStatsCounter);
       for (Segment<K, V> segment : localCache.segments) {
@@ -4984,7 +4916,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     // Serialization Support
 
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
 
     Object writeReplace() {
       return new ManualSerializationProxy<>(localCache);
@@ -4995,7 +4927,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
     }
   }
 
-  static class LocalLoadingCache<K, V> extends LocalManualCache<K, V>
+  static final class LocalLoadingCache<K, V> extends LocalManualCache<K, V>
       implements LoadingCache<K, V> {
 
     LocalLoadingCache(
@@ -5037,7 +4969,7 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
 
     // Serialization Support
 
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
 
     @Override
     Object writeReplace() {
@@ -5048,4 +4980,17 @@ class LocalCache<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V> 
       throw new InvalidObjectException("Use LoadingSerializationProxy");
     }
   }
+
+  private static <T> @Nullable T checkNotValueType(@Nullable T referent) {
+    return referent;
+  }
+
+  private static IllegalArgumentException createException(Object referent) {
+    return new IllegalArgumentException(
+        "Cannot create a weak or soft reference to a value class: "
+            + referent.getClass().getName());
+  }
+
+  private static final boolean IS_ANDROID =
+      requireNonNull(System.getProperty("java.runtime.name", "")).contains("Android");
 }

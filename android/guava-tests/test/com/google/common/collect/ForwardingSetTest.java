@@ -19,6 +19,7 @@ package com.google.common.collect;
 import static java.util.Arrays.asList;
 
 import com.google.common.base.Function;
+import com.google.common.collect.ForwardingSet.SimpleForwardingSet;
 import com.google.common.collect.testing.MinimalSet;
 import com.google.common.collect.testing.SetTestSuiteBuilder;
 import com.google.common.collect.testing.TestStringSetGenerator;
@@ -27,11 +28,13 @@ import com.google.common.collect.testing.features.CollectionSize;
 import com.google.common.testing.EqualsTester;
 import com.google.common.testing.ForwardingWrapperTester;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NullUnmarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Tests for {@code ForwardingSet}.
@@ -39,17 +42,11 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Robert Konigsberg
  * @author Louis Wasserman
  */
+@NullUnmarked
 public class ForwardingSetTest extends TestCase {
-  static class StandardImplForwardingSet<T> extends ForwardingSet<T> {
-    private final Set<T> backingSet;
-
+  static class StandardImplForwardingSet<T> extends SimpleForwardingSet<T> {
     StandardImplForwardingSet(Set<T> backingSet) {
-      this.backingSet = backingSet;
-    }
-
-    @Override
-    protected Set<T> delegate() {
-      return backingSet;
+      super(backingSet);
     }
 
     @Override
@@ -113,6 +110,7 @@ public class ForwardingSetTest extends TestCase {
     }
   }
 
+  @AndroidIncompatible // test-suite builders
   public static Test suite() {
     TestSuite suite = new TestSuite();
 
@@ -122,7 +120,7 @@ public class ForwardingSetTest extends TestCase {
                 new TestStringSetGenerator() {
                   @Override
                   protected Set<String> create(String[] elements) {
-                    return new StandardImplForwardingSet<>(Sets.newLinkedHashSet(asList(elements)));
+                    return new StandardImplForwardingSet<>(new LinkedHashSet<>(asList(elements)));
                   }
                 })
             .named("ForwardingSet[LinkedHashSet] with standard implementations")
@@ -168,7 +166,7 @@ public class ForwardingSetTest extends TestCase {
         .testEquals();
   }
 
-  private static <T> Set<T> wrap(final Set<T> delegate) {
+  private static <T> Set<T> wrap(Set<T> delegate) {
     return new ForwardingSet<T>() {
       @Override
       protected Set<T> delegate() {

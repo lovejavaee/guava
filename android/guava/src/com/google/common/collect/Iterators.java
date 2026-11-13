@@ -20,20 +20,23 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Predicates.instanceOf;
+import static com.google.common.collect.CollectPreconditions.checkNonnegativeIndex;
 import static com.google.common.collect.CollectPreconditions.checkRemove;
+import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.NullnessCasts.uncheckedCastNullableTToT;
+import static java.util.Arrays.asList;
+import static java.util.Collections.unmodifiableList;
 import static java.util.Objects.requireNonNull;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Function;
-import com.google.common.base.Objects;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.primitives.Ints;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.errorprone.annotations.InlineMe;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collection;
@@ -43,12 +46,12 @@ import java.util.Deque;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Queue;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * This class contains static utility methods that operate on or return objects of type {@link
@@ -67,8 +70,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Jared Levy
  * @since 2.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class Iterators {
   private Iterators() {}
 
@@ -154,6 +156,9 @@ public final class Iterators {
    * @deprecated no need to use this
    * @since 10.0
    */
+  @InlineMe(
+      replacement = "checkNotNull(iterator)",
+      staticImports = "com.google.common.base.Preconditions.checkNotNull")
   @Deprecated
   public static <T extends @Nullable Object> UnmodifiableIterator<T> unmodifiableIterator(
       UnmodifiableIterator<T> iterator) {
@@ -174,7 +179,7 @@ public final class Iterators {
   }
 
   /** Returns {@code true} if {@code iterator} contains {@code element}. */
-  public static boolean contains(Iterator<?> iterator, @CheckForNull Object element) {
+  public static boolean contains(Iterator<?> iterator, @Nullable Object element) {
     if (element == null) {
       while (iterator.hasNext()) {
         if (iterator.next() == null) {
@@ -273,7 +278,7 @@ public final class Iterators {
       }
       Object o1 = iterator1.next();
       Object o2 = iterator2.next();
-      if (!Objects.equal(o1, o2)) {
+      if (!Objects.equals(o1, o2)) {
         return false;
       }
     }
@@ -345,10 +350,10 @@ public final class Iterators {
    * @return a newly-allocated array into which all the elements of the iterator have been copied
    */
   @GwtIncompatible // Array.newInstance(Class, int)
-  // For discussion of this signature, see the corresponding overload of *Iterables*.toArray.
-  public static <T> @Nullable T[] toArray(Iterator<? extends @Nullable T> iterator, Class<T> type) {
-    List<@Nullable T> list = Lists.newArrayList(iterator);
-    return Iterables.toArray(list, type);
+  public static <T extends @Nullable Object> T[] toArray(
+      Iterator<? extends T> iterator, Class<@NonNull T> type) {
+    List<T> list = newArrayList(iterator);
+    return Iterables.<T>toArray(list, type);
   }
 
   /**
@@ -375,7 +380,7 @@ public final class Iterators {
    *
    * @see Collections#frequency
    */
-  public static int frequency(Iterator<?> iterator, @CheckForNull Object element) {
+  public static int frequency(Iterator<?> iterator, @Nullable Object element) {
     int count = 0;
     while (contains(iterator, element)) {
       // Since it lives in the same class, we know contains gets to the element and then stops,
@@ -449,7 +454,7 @@ public final class Iterators {
    */
   @SafeVarargs
   public static <T extends @Nullable Object> Iterator<T> cycle(T... elements) {
-    return cycle(Lists.newArrayList(elements));
+    return cycle(newArrayList(elements));
   }
 
   /**
@@ -550,6 +555,7 @@ public final class Iterators {
    *
    * @throws NullPointerException if any of the provided iterators is null
    */
+  @SafeVarargs
   public static <T extends @Nullable Object> Iterator<T> concat(Iterator<? extends T>... inputs) {
     return concatNoDefensiveCopy(Arrays.copyOf(inputs, inputs.length));
   }
@@ -588,6 +594,9 @@ public final class Iterators {
    * <p><b>Note:</b> The current implementation eagerly allocates storage for {@code size} elements.
    * As a consequence, passing values like {@code Integer.MAX_VALUE} can lead to {@link
    * OutOfMemoryError}.
+   *
+   * <p><b>Java 24+ users:</b> The {@code Stream} equivalent of this method is {@code
+   * stream.gather(Gatherers.windowFixed(size))}.
    *
    * @param iterator the iterator to return a partitioned view of
    * @param size the desired size of each partition (the last may be smaller)
@@ -635,8 +644,7 @@ public final class Iterators {
           throw new NoSuchElementException();
         }
         @SuppressWarnings("unchecked") // we only put Ts in it
-        @Nullable
-        T[] array = (@Nullable T[]) new Object[size];
+        @Nullable T[] array = (@Nullable T[]) new Object[size];
         int count = 0;
         for (; count < size && iterator.hasNext(); count++) {
           array[count] = iterator.next();
@@ -645,7 +653,7 @@ public final class Iterators {
           array[i] = null; // for GWT
         }
 
-        List<@Nullable T> list = Collections.unmodifiableList(Arrays.asList(array));
+        List<@Nullable T> list = unmodifiableList(asList(array));
         // TODO(b/192579700): Use a ternary once it no longer confuses our nullness checker.
         if (pad || count == size) {
           return list;
@@ -666,8 +674,7 @@ public final class Iterators {
     checkNotNull(retainIfTrue);
     return new AbstractIterator<T>() {
       @Override
-      @CheckForNull
-      protected T computeNext() {
+      protected @Nullable T computeNext() {
         while (unfiltered.hasNext()) {
           T element = unfiltered.next();
           if (retainIfTrue.apply(element)) {
@@ -746,11 +753,8 @@ public final class Iterators {
    * @since 7.0
    */
   // For discussion of this signature, see the corresponding overload of *Iterables*.find.
-  @CheckForNull
-  public static <T extends @Nullable Object> T find(
-      Iterator<? extends T> iterator,
-      Predicate<? super T> predicate,
-      @CheckForNull T defaultValue) {
+  public static <T extends @Nullable Object> @Nullable T find(
+      Iterator<? extends T> iterator, Predicate<? super T> predicate, @Nullable T defaultValue) {
     checkNotNull(iterator);
     checkNotNull(predicate);
     while (iterator.hasNext()) {
@@ -842,7 +846,7 @@ public final class Iterators {
    */
   @ParametricNullness
   public static <T extends @Nullable Object> T get(Iterator<T> iterator, int position) {
-    checkNonnegative(position);
+    checkNonnegativeIndex(position, "position");
     int skipped = advance(iterator, position);
     if (!iterator.hasNext()) {
       throw new IndexOutOfBoundsException(
@@ -870,15 +874,9 @@ public final class Iterators {
   @ParametricNullness
   public static <T extends @Nullable Object> T get(
       Iterator<? extends T> iterator, int position, @ParametricNullness T defaultValue) {
-    checkNonnegative(position);
+    checkNonnegativeIndex(position, "position");
     advance(iterator, position);
     return getNext(iterator, defaultValue);
-  }
-
-  static void checkNonnegative(int position) {
-    if (position < 0) {
-      throw new IndexOutOfBoundsException("position (" + position + ") must not be negative");
-    }
   }
 
   /**
@@ -959,7 +957,7 @@ public final class Iterators {
     checkNotNull(iterator);
     checkArgument(limitSize >= 0, "limit is negative");
     return new Iterator<T>() {
-      private int count;
+      int count;
 
       @Override
       public boolean hasNext() {
@@ -1022,8 +1020,7 @@ public final class Iterators {
    * Deletes and returns the next value from the iterator, or returns {@code null} if there is no
    * such value.
    */
-  @CheckForNull
-  static <T extends @Nullable Object> T pollNext(Iterator<T> iterator) {
+  static <T extends @Nullable Object> @Nullable T pollNext(Iterator<T> iterator) {
     if (iterator.hasNext()) {
       T result = iterator.next();
       iterator.remove();
@@ -1056,47 +1053,40 @@ public final class Iterators {
    */
   @SafeVarargs
   public static <T extends @Nullable Object> UnmodifiableIterator<T> forArray(T... array) {
-    return forArray(array, 0, array.length, 0);
+    return forArrayWithPosition(array, 0);
   }
 
   /**
-   * Returns a list iterator containing the elements in the specified range of {@code array} in
-   * order, starting at the specified index.
+   * Returns a list iterator containing the elements in the specified {@code array} in order,
+   * starting at the specified {@code position}.
    *
    * <p>The {@code Iterable} equivalent of this method is {@code
-   * Arrays.asList(array).subList(offset, offset + length).listIterator(index)}.
+   * Arrays.asList(array).listIterator(position)}.
    */
-  static <T extends @Nullable Object> UnmodifiableListIterator<T> forArray(
-      T[] array, int offset, int length, int index) {
-    checkArgument(length >= 0);
-    int end = offset + length;
-
-    // Technically we should give a slightly more descriptive error on overflow
-    Preconditions.checkPositionIndexes(offset, end, array.length);
-    Preconditions.checkPositionIndex(index, length);
-    if (length == 0) {
+  static <T extends @Nullable Object> UnmodifiableListIterator<T> forArrayWithPosition(
+      T[] array, int position) {
+    if (array.length == 0) {
+      Preconditions.checkPositionIndex(position, array.length); // otherwise checked in ArrayItr
       return emptyListIterator();
     }
-    return new ArrayItr<>(array, offset, length, index);
+    return new ArrayItr<>(array, position);
   }
 
   private static final class ArrayItr<T extends @Nullable Object>
       extends AbstractIndexedListIterator<T> {
-    static final UnmodifiableListIterator<Object> EMPTY = new ArrayItr<>(new Object[0], 0, 0, 0);
+    static final UnmodifiableListIterator<Object> EMPTY = new ArrayItr<>(new Object[0], 0);
 
     private final T[] array;
-    private final int offset;
 
-    ArrayItr(T[] array, int offset, int length, int index) {
-      super(length, index);
+    ArrayItr(T[] array, int position) {
+      super(array.length, position);
       this.array = array;
-      this.offset = offset;
     }
 
     @Override
     @ParametricNullness
-    protected T get(int index) {
-      return array[offset + index];
+    T get(int index) {
+      return array[index];
     }
   }
 
@@ -1107,24 +1097,32 @@ public final class Iterators {
    */
   public static <T extends @Nullable Object> UnmodifiableIterator<T> singletonIterator(
       @ParametricNullness T value) {
-    return new UnmodifiableIterator<T>() {
-      boolean done;
+    return new SingletonIterator<>(value);
+  }
 
-      @Override
-      public boolean hasNext() {
-        return !done;
-      }
+  private static final class SingletonIterator<T extends @Nullable Object>
+      extends UnmodifiableIterator<T> {
+    private final T value;
+    private boolean done;
 
-      @Override
-      @ParametricNullness
-      public T next() {
-        if (done) {
-          throw new NoSuchElementException();
-        }
-        done = true;
-        return value;
+    SingletonIterator(T value) {
+      this.value = value;
+    }
+
+    @Override
+    public boolean hasNext() {
+      return !done;
+    }
+
+    @Override
+    @ParametricNullness
+    public T next() {
+      if (done) {
+        throw new NoSuchElementException();
       }
-    };
+      done = true;
+      return value;
+    }
   }
 
   /**
@@ -1160,6 +1158,8 @@ public final class Iterators {
    * <p>The {@code Iterable} equivalent of this method is either {@link Collections#enumeration} (if
    * you have a {@link Collection}), or {@code Iterators.asEnumeration(collection.iterator())}.
    */
+  // This is an adapter for cases in which users do need an Enumeration for whatever reason.
+  @SuppressWarnings("JdkObsolete")
   public static <T extends @Nullable Object> Enumeration<T> asEnumeration(Iterator<T> iterator) {
     checkNotNull(iterator);
     return new Enumeration<T>() {
@@ -1177,13 +1177,13 @@ public final class Iterators {
   }
 
   /** Implementation of PeekingIterator that avoids peeking unless necessary. */
-  private static class PeekingImpl<E extends @Nullable Object> implements PeekingIterator<E> {
+  private static final class PeekingImpl<E extends @Nullable Object> implements PeekingIterator<E> {
 
     private final Iterator<? extends E> iterator;
     private boolean hasPeeked;
-    @CheckForNull private E peekedElement;
+    private @Nullable E peekedElement;
 
-    public PeekingImpl(Iterator<? extends E> iterator) {
+    PeekingImpl(Iterator<? extends E> iterator) {
       this.iterator = checkNotNull(iterator);
     }
 
@@ -1230,13 +1230,13 @@ public final class Iterators {
    * iteration, and hence return the same object each time. A subsequent call to {@code next} is
    * guaranteed to return the same object again. For example:
    *
-   * <pre>{@code
+   * {@snippet :
    * PeekingIterator<String> peekingIterator =
    *     Iterators.peekingIterator(Iterators.forArray("a", "b"));
    * String a1 = peekingIterator.peek(); // returns "a"
    * String a2 = peekingIterator.peek(); // also returns "a"
    * String a3 = peekingIterator.next(); // also returns "a"
-   * }</pre>
+   * }
    *
    * <p>Any structural changes to the underlying iteration (aside from those performed by the
    * iterator's own {@link PeekingIterator#remove()} method) will leave the iterator in an undefined
@@ -1277,6 +1277,9 @@ public final class Iterators {
    * @deprecated no need to use this
    * @since 10.0
    */
+  @InlineMe(
+      replacement = "checkNotNull(iterator)",
+      staticImports = "com.google.common.base.Preconditions.checkNotNull")
   @Deprecated
   public static <T extends @Nullable Object> PeekingIterator<T> peekingIterator(
       PeekingIterator<T> iterator) {
@@ -1290,12 +1293,12 @@ public final class Iterators {
    * <p>Callers must ensure that the source {@code iterators} are in non-descending order as this
    * method does not sort its input.
    *
-   * <p>For any equivalent elements across all {@code iterators}, it is undefined which element is
-   * returned first.
+   * <p>For any equivalent elements across all {@code iterators}, elements are returned in the order
+   * of their source iterators. That is, if element A from iterator 1 and element B from iterator 2
+   * compare as equal, A will be returned before B if iterator 1 was passed before iterator 2.
    *
    * @since 11.0
    */
-  @Beta
   public static <T extends @Nullable Object> UnmodifiableIterator<T> mergeSorted(
       Iterable<? extends Iterator<? extends T>> iterators, Comparator<? super T> comparator) {
     checkNotNull(iterators, "iterators");
@@ -1313,22 +1316,40 @@ public final class Iterators {
    * iterators. (Retrieving all elements takes approximately O(N*log(M)) time, where N is the total
    * number of elements.)
    */
-  private static class MergingIterator<T extends @Nullable Object> extends UnmodifiableIterator<T> {
-    final Queue<PeekingIterator<T>> queue;
+  private static final class MergingIterator<T extends @Nullable Object>
+      extends UnmodifiableIterator<T> {
 
-    public MergingIterator(
+    // Wrapper class to track insertion order for stable sorting
+    private static final class IndexedIterator<E extends @Nullable Object> {
+      final PeekingIterator<E> iterator;
+      final int index;
+
+      IndexedIterator(PeekingIterator<E> iterator, int index) {
+        this.iterator = iterator;
+        this.index = index;
+      }
+    }
+
+    final Queue<IndexedIterator<T>> queue;
+
+    MergingIterator(
         Iterable<? extends Iterator<? extends T>> iterators, Comparator<? super T> itemComparator) {
       // A comparator that's used by the heap, allowing the heap
-      // to be sorted based on the top of each iterator.
-      Comparator<PeekingIterator<T>> heapComparator =
-          (PeekingIterator<T> o1, PeekingIterator<T> o2) ->
-              itemComparator.compare(o1.peek(), o2.peek());
+      // to be sorted based on the top of each iterator, with insertion order as tiebreaker
+      Comparator<IndexedIterator<T>> heapComparator =
+          (o1, o2) ->
+              ComparisonChain.start()
+                  .compare(o1.iterator.peek(), o2.iterator.peek(), itemComparator)
+                  // When elements are equal, use insertion order to maintain stability
+                  .compare(o1.index, o2.index)
+                  .result();
 
       queue = new PriorityQueue<>(2, heapComparator);
 
+      int index = 0;
       for (Iterator<? extends T> iterator : iterators) {
         if (iterator.hasNext()) {
-          queue.add(Iterators.peekingIterator(iterator));
+          queue.add(new IndexedIterator<>(peekingIterator(iterator), index++));
         }
       }
     }
@@ -1341,21 +1362,24 @@ public final class Iterators {
     @Override
     @ParametricNullness
     public T next() {
-      PeekingIterator<T> nextIter = queue.remove();
+      IndexedIterator<T> nextIndexed = queue.remove();
+      PeekingIterator<T> nextIter = nextIndexed.iterator;
       T next = nextIter.next();
       if (nextIter.hasNext()) {
-        queue.add(nextIter);
+        queue.add(nextIndexed);
       }
       return next;
     }
   }
 
-  private static class ConcatenatedIterator<T extends @Nullable Object> implements Iterator<T> {
+  private static final class ConcatenatedIterator<T extends @Nullable Object>
+      implements Iterator<T> {
     /* The last iterator to return an element.  Calls to remove() go to this iterator. */
-    @CheckForNull private Iterator<? extends T> toRemove;
+    private @Nullable Iterator<? extends T> toRemove;
 
     /* The iterator currently returning elements. */
-    private Iterator<? extends T> iterator;
+    // For discussion of @Nullable, see the checkNotNull call in hasNext() below.
+    private @Nullable Iterator<? extends T> iterator;
 
     /*
      * We track the "meta iterators," the iterators-of-iterators, below.  Usually, topMetaIterator
@@ -1364,10 +1388,10 @@ public final class Iterators {
      * operation O(1).
      */
 
-    @CheckForNull private Iterator<? extends Iterator<? extends T>> topMetaIterator;
+    private @Nullable Iterator<? extends Iterator<? extends T>> topMetaIterator;
 
     // Only becomes nonnull if we encounter nested concatenations.
-    @CheckForNull private Deque<Iterator<? extends Iterator<? extends T>>> metaIterators;
+    private @Nullable Deque<Iterator<? extends Iterator<? extends T>>> metaIterators;
 
     ConcatenatedIterator(Iterator<? extends Iterator<? extends T>> metaIterator) {
       iterator = emptyIterator();
@@ -1375,8 +1399,7 @@ public final class Iterators {
     }
 
     // Returns a nonempty meta-iterator or, if all meta-iterators are empty, null.
-    @CheckForNull
-    private Iterator<? extends Iterator<? extends T>> getTopMetaIterator() {
+    private @Nullable Iterator<? extends Iterator<? extends T>> getTopMetaIterator() {
       while (topMetaIterator == null || !topMetaIterator.hasNext()) {
         if (metaIterators != null && !metaIterators.isEmpty()) {
           topMetaIterator = metaIterators.removeFirst();
@@ -1389,8 +1412,8 @@ public final class Iterators {
 
     @Override
     public boolean hasNext() {
-      while (!checkNotNull(iterator).hasNext()) {
-        // this weird checkNotNull positioning appears required by our tests, which expect
+      while (!requireNonNull(iterator).hasNext()) {
+        // This weird requireNonNull positioning appears to be required by our tests, which expect
         // both hasNext and next to throw NPE if an input iterator is null.
 
         topMetaIterator = getTopMetaIterator();
@@ -1430,7 +1453,8 @@ public final class Iterators {
     public T next() {
       if (hasNext()) {
         toRemove = iterator;
-        return iterator.next();
+        // For discussion of requireNonNull, see hasNext() above.
+        return requireNonNull(iterator).next();
       } else {
         throw new NoSuchElementException();
       }
@@ -1444,10 +1468,5 @@ public final class Iterators {
       toRemove.remove();
       toRemove = null;
     }
-  }
-
-  /** Used to avoid http://bugs.sun.com/view_bug.do?bug_id=6558557 */
-  static <T extends @Nullable Object> ListIterator<T> cast(Iterator<T> iterator) {
-    return (ListIterator<T>) iterator;
   }
 }

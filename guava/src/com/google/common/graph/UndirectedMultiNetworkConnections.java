@@ -16,9 +16,11 @@
 
 package com.google.common.graph;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.graph.GraphConstants.INNER_CAPACITY;
 import static com.google.common.graph.GraphConstants.INNER_LOAD_FACTOR;
+import static java.util.Collections.unmodifiableSet;
 
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableMap;
@@ -26,11 +28,10 @@ import com.google.common.collect.Multiset;
 import com.google.errorprone.annotations.concurrent.LazyInit;
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An implementation of {@link NetworkConnections} for undirected networks with parallel edges.
@@ -39,7 +40,6 @@ import javax.annotation.CheckForNull;
  * @param <N> Node parameter type
  * @param <E> Edge parameter type
  */
-@ElementTypesAreNonnullByDefault
 final class UndirectedMultiNetworkConnections<N, E>
     extends AbstractUndirectedNetworkConnections<N, E> {
 
@@ -56,11 +56,11 @@ final class UndirectedMultiNetworkConnections<N, E>
     return new UndirectedMultiNetworkConnections<>(ImmutableMap.copyOf(incidentEdges));
   }
 
-  @CheckForNull @LazyInit private transient Reference<Multiset<N>> adjacentNodesReference;
+  @LazyInit private @Nullable Reference<Multiset<N>> adjacentNodesReference;
 
   @Override
   public Set<N> adjacentNodes() {
-    return Collections.unmodifiableSet(adjacentNodesMultiset().elementSet());
+    return unmodifiableSet(adjacentNodesMultiset().elementSet());
   }
 
   private Multiset<N> adjacentNodesMultiset() {
@@ -83,8 +83,8 @@ final class UndirectedMultiNetworkConnections<N, E>
   }
 
   @Override
-  @CheckForNull
-  public N removeInEdge(E edge, boolean isSelfLoop) {
+  public @Nullable N removeInEdge(E edge, boolean isSelfLoop) {
+    checkNotNull(edge);
     if (!isSelfLoop) {
       return removeOutEdge(edge);
     }
@@ -103,6 +103,8 @@ final class UndirectedMultiNetworkConnections<N, E>
 
   @Override
   public void addInEdge(E edge, N node, boolean isSelfLoop) {
+    checkNotNull(edge);
+    checkNotNull(node);
     if (!isSelfLoop) {
       addOutEdge(edge, node);
     }
@@ -117,8 +119,7 @@ final class UndirectedMultiNetworkConnections<N, E>
     }
   }
 
-  @CheckForNull
-  private static <T> T getReference(@CheckForNull Reference<T> reference) {
+  private static <T> @Nullable T getReference(@Nullable Reference<T> reference) {
     return (reference == null) ? null : reference.get();
   }
 }

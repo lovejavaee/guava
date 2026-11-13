@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An {@link ExecutorService} that returns {@link ListenableFuture} instances. To create an instance
@@ -37,25 +37,24 @@ import org.checkerframework.checker.nullness.qual.Nullable;
     "Use TestingExecutors.sameThreadScheduledExecutor, or wrap a real Executor from "
         + "java.util.concurrent.Executors with MoreExecutors.listeningDecorator")
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public interface ListeningExecutorService extends ExecutorService {
   /**
    * @return a {@code ListenableFuture} representing pending completion of the task
-   * @throws RejectedExecutionException {@inheritDoc}
+   * @throws RejectedExecutionException if the task cannot be scheduled for execution
    */
   @Override
   <T extends @Nullable Object> ListenableFuture<T> submit(Callable<T> task);
 
   /**
    * @return a {@code ListenableFuture} representing pending completion of the task
-   * @throws RejectedExecutionException {@inheritDoc}
+   * @throws RejectedExecutionException if the task cannot be scheduled for execution
    */
   @Override
   ListenableFuture<?> submit(Runnable task);
 
   /**
    * @return a {@code ListenableFuture} representing pending completion of the task
-   * @throws RejectedExecutionException {@inheritDoc}
+   * @throws RejectedExecutionException if the task cannot be scheduled for execution
    */
   @Override
   <T extends @Nullable Object> ListenableFuture<T> submit(
@@ -76,7 +75,7 @@ public interface ListeningExecutorService extends ExecutorService {
    * @return A list of {@code ListenableFuture} instances representing the tasks, in the same
    *     sequential order as produced by the iterator for the given task list, each of which has
    *     completed.
-   * @throws RejectedExecutionException {@inheritDoc}
+   * @throws RejectedExecutionException if the task cannot be scheduled for execution
    * @throws NullPointerException if any task is null
    */
   @Override
@@ -99,7 +98,7 @@ public interface ListeningExecutorService extends ExecutorService {
    *     sequential order as produced by the iterator for the given task list. If the operation did
    *     not time out, each task will have completed. If it did time out, some of these tasks will
    *     not have completed.
-   * @throws RejectedExecutionException {@inheritDoc}
+   * @throws RejectedExecutionException if the task cannot be scheduled for execution
    * @throws NullPointerException if any task is null
    */
   @Override

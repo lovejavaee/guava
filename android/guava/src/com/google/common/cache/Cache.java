@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A semi-persistent mapping from keys to values. Cache entries are manually added using {@link
@@ -42,7 +42,6 @@ import javax.annotation.CheckForNull;
  */
 @DoNotMock("Use CacheBuilder.newBuilder().build()")
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public interface Cache<K, V> {
 
   /**
@@ -51,9 +50,8 @@ public interface Cache<K, V> {
    *
    * @since 11.0
    */
-  @CheckForNull
   @CanIgnoreReturnValue // TODO(b/27479612): consider removing this?
-  V getIfPresent(@CompatibleWith("K") Object key);
+  @Nullable V getIfPresent(@CompatibleWith("K") Object key);
 
   /**
    * Returns the value associated with {@code key} in this cache, obtaining that value from {@code
@@ -128,7 +126,7 @@ public interface Cache<K, V> {
   void put(K key, V value);
 
   /**
-   * Copies all of the mappings from the specified map to the cache. The effect of this call is
+   * Copies all the mappings from the specified map to the cache. The effect of this call is
    * equivalent to that of calling {@code put(k, v)} on this map once for each mapping from key
    * {@code k} to value {@code v} in the specified map. The behavior of this operation is undefined
    * if the specified map is modified while the operation is in progress.

@@ -18,12 +18,12 @@ package com.google.common.graph;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.util.Collections.unmodifiableSet;
 import static java.util.Objects.requireNonNull;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A base implementation of {@link NetworkConnections} for undirected networks.
@@ -32,7 +32,6 @@ import javax.annotation.CheckForNull;
  * @param <N> Node parameter type
  * @param <E> Edge parameter type
  */
-@ElementTypesAreNonnullByDefault
 abstract class AbstractUndirectedNetworkConnections<N, E> implements NetworkConnections<N, E> {
   /** Keys are edges incident to the origin node, values are the node at the other end. */
   final Map<E, N> incidentEdgeMap;
@@ -52,8 +51,8 @@ abstract class AbstractUndirectedNetworkConnections<N, E> implements NetworkConn
   }
 
   @Override
-  public Set<E> incidentEdges() {
-    return Collections.unmodifiableSet(incidentEdgeMap.keySet());
+  public final Set<E> incidentEdges() {
+    return unmodifiableSet(incidentEdgeMap.keySet());
   }
 
   @Override
@@ -73,8 +72,8 @@ abstract class AbstractUndirectedNetworkConnections<N, E> implements NetworkConn
   }
 
   @Override
-  @CheckForNull
-  public N removeInEdge(E edge, boolean isSelfLoop) {
+  public @Nullable N removeInEdge(E edge, boolean isSelfLoop) {
+    checkNotNull(edge);
     if (!isSelfLoop) {
       return removeOutEdge(edge);
     }
@@ -90,6 +89,8 @@ abstract class AbstractUndirectedNetworkConnections<N, E> implements NetworkConn
 
   @Override
   public void addInEdge(E edge, N node, boolean isSelfLoop) {
+    checkNotNull(edge);
+    checkNotNull(node);
     if (!isSelfLoop) {
       addOutEdge(edge, node);
     }
@@ -97,6 +98,8 @@ abstract class AbstractUndirectedNetworkConnections<N, E> implements NetworkConn
 
   @Override
   public void addOutEdge(E edge, N node) {
+    checkNotNull(edge);
+    checkNotNull(node);
     N previousNode = incidentEdgeMap.put(edge, node);
     checkState(previousNode == null);
   }

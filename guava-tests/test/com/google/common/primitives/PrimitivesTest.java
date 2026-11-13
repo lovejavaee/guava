@@ -17,19 +17,23 @@
 package com.google.common.primitives;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.testing.NullPointerTester;
 import java.util.Set;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Unit test for {@link Primitives}.
  *
  * @author Kevin Bourrillion
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullUnmarked
 public class PrimitivesTest extends TestCase {
   public void testIsWrapperType() {
     assertThat(Primitives.isWrapperType(Void.class)).isTrue();
@@ -37,15 +41,15 @@ public class PrimitivesTest extends TestCase {
   }
 
   public void testWrap() {
-    assertThat(Primitives.wrap(int.class)).isSameInstanceAs(Integer.class);
-    assertThat(Primitives.wrap(Integer.class)).isSameInstanceAs(Integer.class);
-    assertThat(Primitives.wrap(String.class)).isSameInstanceAs(String.class);
+    assertThat(Primitives.wrap(int.class)).isEqualTo(Integer.class);
+    assertThat(Primitives.wrap(Integer.class)).isEqualTo(Integer.class);
+    assertThat(Primitives.wrap(String.class)).isEqualTo(String.class);
   }
 
   public void testUnwrap() {
-    assertThat(Primitives.unwrap(Integer.class)).isSameInstanceAs(int.class);
-    assertThat(Primitives.unwrap(int.class)).isSameInstanceAs(int.class);
-    assertThat(Primitives.unwrap(String.class)).isSameInstanceAs(String.class);
+    assertThat(Primitives.unwrap(Integer.class)).isEqualTo(int.class);
+    assertThat(Primitives.unwrap(int.class)).isEqualTo(int.class);
+    assertThat(Primitives.unwrap(String.class)).isEqualTo(String.class);
   }
 
   public void testAllPrimitiveTypes() {
@@ -62,11 +66,7 @@ public class PrimitivesTest extends TestCase {
             short.class,
             void.class);
 
-    try {
-      primitives.remove(boolean.class);
-      fail();
-    } catch (UnsupportedOperationException expected) {
-    }
+    assertThrows(UnsupportedOperationException.class, () -> primitives.remove(boolean.class));
   }
 
   public void testAllWrapperTypes() {
@@ -83,14 +83,11 @@ public class PrimitivesTest extends TestCase {
             Short.class,
             Void.class);
 
-    try {
-      wrappers.remove(Boolean.class);
-      fail();
-    } catch (UnsupportedOperationException expected) {
-    }
+    assertThrows(UnsupportedOperationException.class, () -> wrappers.remove(Boolean.class));
   }
 
   @GwtIncompatible
+  @J2ktIncompatible
   public void testNullPointerExceptions() {
     NullPointerTester tester = new NullPointerTester();
     tester.testAllPublicStaticMethods(Primitives.class);

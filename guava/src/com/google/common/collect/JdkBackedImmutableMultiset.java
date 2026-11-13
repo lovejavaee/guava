@@ -15,12 +15,16 @@
 package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.ImmutableList.asImmutableList;
+import static com.google.common.collect.Maps.newHashMapWithExpectedSize;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.primitives.Ints;
 import java.util.Collection;
 import java.util.Map;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An implementation of ImmutableMultiset backed by a JDK Map and a list of entries. Used to protect
@@ -29,7 +33,6 @@ import javax.annotation.CheckForNull;
  * @author Louis Wasserman
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 final class JdkBackedImmutableMultiset<E> extends ImmutableMultiset<E> {
   private final Map<E, Integer> delegateMap;
   private final ImmutableList<Entry<E>> entries;
@@ -37,8 +40,8 @@ final class JdkBackedImmutableMultiset<E> extends ImmutableMultiset<E> {
 
   static <E> ImmutableMultiset<E> create(Collection<? extends Entry<? extends E>> entries) {
     @SuppressWarnings("unchecked")
-    Entry<E>[] entriesArray = entries.toArray(new Entry[0]);
-    Map<E, Integer> delegateMap = Maps.newHashMapWithExpectedSize(entriesArray.length);
+    Entry<E>[] entriesArray = entries.toArray((Entry<E>[]) new Entry<?>[0]);
+    Map<E, Integer> delegateMap = newHashMapWithExpectedSize(entriesArray.length);
     long size = 0;
     for (int i = 0; i < entriesArray.length; i++) {
       Entry<E> entry = entriesArray[i];
@@ -50,8 +53,7 @@ final class JdkBackedImmutableMultiset<E> extends ImmutableMultiset<E> {
         entriesArray[i] = Multisets.immutableEntry(element, count);
       }
     }
-    return new JdkBackedImmutableMultiset<>(
-        delegateMap, ImmutableList.asImmutableList(entriesArray), size);
+    return new JdkBackedImmutableMultiset<>(delegateMap, asImmutableList(entriesArray), size);
   }
 
   private JdkBackedImmutableMultiset(
@@ -62,16 +64,13 @@ final class JdkBackedImmutableMultiset<E> extends ImmutableMultiset<E> {
   }
 
   @Override
-  public int count(@CheckForNull Object element) {
+  public int count(@Nullable Object element) {
     return delegateMap.getOrDefault(element, 0);
   }
 
-  @CheckForNull private transient ImmutableSet<E> elementSet;
-
   @Override
   public ImmutableSet<E> elementSet() {
-    ImmutableSet<E> result = elementSet;
-    return (result == null) ? elementSet = new ElementSet<>(entries, this) : result;
+    return new ElementSet<>(entries, this);
   }
 
   @Override
@@ -87,5 +86,14 @@ final class JdkBackedImmutableMultiset<E> extends ImmutableMultiset<E> {
   @Override
   public int size() {
     return Ints.saturatedCast(size);
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

@@ -20,8 +20,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.graph.Graphs.checkNonNegative;
 
-import com.google.common.annotations.Beta;
-import com.google.common.base.Optional;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.DoNotMock;
 
@@ -44,7 +42,7 @@ import com.google.errorprone.annotations.DoNotMock;
  *
  * <p>Examples of use:
  *
- * <pre>{@code
+ * {@snippet :
  * // Building a mutable graph
  * MutableGraph<String> graph = GraphBuilder.undirected().allowsSelfLoops(true).build();
  * graph.putEdge("bread", "bread");
@@ -60,7 +58,7 @@ import com.google.errorprone.annotations.DoNotMock;
  *         .putEdge("chocolate", "peanut butter")
  *         .putEdge("peanut butter", "jelly")
  *         .build();
- * }</pre>
+ * }
  *
  * @author James Sexton
  * @author Joshua O'Madadhain
@@ -69,9 +67,7 @@ import com.google.errorprone.annotations.DoNotMock;
  *     constructed based on an existing {@code Graph} using {@link #from(Graph)}.
  * @since 20.0
  */
-@Beta
 @DoNotMock
-@ElementTypesAreNonnullByDefault
 public final class GraphBuilder<N> extends AbstractGraphBuilder<N> {
 
   /** Creates a new instance with the specified edge directionality. */
@@ -138,7 +134,7 @@ public final class GraphBuilder<N> extends AbstractGraphBuilder<N> {
    */
   @CanIgnoreReturnValue
   public GraphBuilder<N> expectedNodeCount(int expectedNodeCount) {
-    this.expectedNodeCount = Optional.of(checkNonNegative(expectedNodeCount));
+    this.expectedNodeCount = checkNonNegative(expectedNodeCount);
     return this;
   }
 

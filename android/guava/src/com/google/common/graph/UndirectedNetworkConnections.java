@@ -17,11 +17,11 @@
 package com.google.common.graph;
 
 import static com.google.common.graph.GraphConstants.EXPECTED_DEGREE;
+import static java.util.Collections.unmodifiableSet;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableBiMap;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -32,7 +32,6 @@ import java.util.Set;
  * @param <N> Node parameter type
  * @param <E> Edge parameter type
  */
-@ElementTypesAreNonnullByDefault
 final class UndirectedNetworkConnections<N, E> extends AbstractUndirectedNetworkConnections<N, E> {
 
   UndirectedNetworkConnections(Map<E, N> incidentEdgeMap) {
@@ -40,7 +39,7 @@ final class UndirectedNetworkConnections<N, E> extends AbstractUndirectedNetwork
   }
 
   static <N, E> UndirectedNetworkConnections<N, E> of() {
-    return new UndirectedNetworkConnections<>(HashBiMap.<E, N>create(EXPECTED_DEGREE));
+    return new UndirectedNetworkConnections<>(HashBiMap.create(EXPECTED_DEGREE));
   }
 
   static <N, E> UndirectedNetworkConnections<N, E> ofImmutable(Map<E, N> incidentEdges) {
@@ -49,7 +48,7 @@ final class UndirectedNetworkConnections<N, E> extends AbstractUndirectedNetwork
 
   @Override
   public Set<N> adjacentNodes() {
-    return Collections.unmodifiableSet(((BiMap<E, N>) incidentEdgeMap).values());
+    return unmodifiableSet(((BiMap<E, N>) incidentEdgeMap).values());
   }
 
   @Override

@@ -16,13 +16,16 @@
 
 package com.google.common.collect;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Collections2.containsAllImpl;
+import static com.google.common.collect.Collections2.toStringImpl;
+
 import com.google.common.annotations.GwtCompatible;
-import com.google.common.base.Objects;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Collection;
 import java.util.Iterator;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A collection which forwards all its method calls to another collection. Subclasses should
@@ -47,7 +50,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 2.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ForwardingCollection<E extends @Nullable Object> extends ForwardingObject
     implements Collection<E> {
   // TODO(lowasser): identify places where thread safety is actually lost
@@ -80,7 +82,7 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
   }
 
   @Override
-  public boolean contains(@CheckForNull Object object) {
+  public boolean contains(@Nullable Object object) {
     return delegate().contains(object);
   }
 
@@ -92,7 +94,7 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
 
   @CanIgnoreReturnValue
   @Override
-  public boolean remove(@CheckForNull Object object) {
+  public boolean remove(@Nullable Object object) {
     return delegate().remove(object);
   }
 
@@ -137,7 +139,7 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
    *
    * @since 7.0
    */
-  protected boolean standardContains(@CheckForNull Object object) {
+  protected boolean standardContains(@Nullable Object object) {
     return Iterators.contains(iterator(), object);
   }
 
@@ -149,7 +151,7 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
    * @since 7.0
    */
   protected boolean standardContainsAll(Collection<?> collection) {
-    return Collections2.containsAllImpl(this, collection);
+    return containsAllImpl(this, collection);
   }
 
   /**
@@ -169,10 +171,10 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
    *
    * @since 7.0
    */
-  protected boolean standardRemove(@CheckForNull Object object) {
+  protected boolean standardRemove(@Nullable Object object) {
     Iterator<E> iterator = iterator();
     while (iterator.hasNext()) {
-      if (Objects.equal(iterator.next(), object)) {
+      if (Objects.equals(iterator.next(), object)) {
         iterator.remove();
         return true;
       }
@@ -232,7 +234,7 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
    * @since 7.0
    */
   protected String standardToString() {
-    return Collections2.toStringImpl(this);
+    return toStringImpl(this);
   }
 
   /**
@@ -256,5 +258,27 @@ public abstract class ForwardingCollection<E extends @Nullable Object> extends F
    */
   protected <T extends @Nullable Object> T[] standardToArray(T[] array) {
     return ObjectArrays.toArrayImpl(this, array);
+  }
+
+  /**
+   * A simplified version of {@link ForwardingCollection} where subclasses can pass in an already
+   * constructed {@link Collection} as the delegate.
+   *
+   * <p>TODO(b/3417232): Consider making this public, but take into consideration whether it would
+   * then appear as a user-visible supertype for any classes.
+   */
+  abstract static class SimpleForwardingCollection<E extends @Nullable Object>
+      extends ForwardingCollection<E> {
+    private final Collection<E> delegate;
+
+    /** Constructor for use by subclasses. */
+    SimpleForwardingCollection(Collection<E> delegate) {
+      this.delegate = checkNotNull(delegate);
+    }
+
+    @Override
+    protected final Collection<E> delegate() {
+      return delegate;
+    }
   }
 }

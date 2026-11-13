@@ -15,15 +15,16 @@
 package com.google.common.hash;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.hash.Hashing.murmur3_128;
 
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.math.LongMath;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLongArray;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Collections of strategies of generating the k * log(M) bits required for an element to be mapped
@@ -37,7 +38,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Dimitris Andreou
  * @author Kurt Alfred Kluever
  */
-@ElementTypesAreNonnullByDefault
+@J2ktIncompatible
 enum BloomFilterStrategies implements BloomFilter.Strategy {
   /**
    * See "Less Hashing, Same Performance: Building a Better Bloom Filter" by Adam Kirsch and Michael
@@ -52,7 +53,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
         int numHashFunctions,
         LockFreeBitArray bits) {
       long bitSize = bits.bitSize();
-      long hash64 = Hashing.murmur3_128().hashObject(object, funnel).asLong();
+      long hash64 = murmur3_128().hashObject(object, funnel).asLong();
       int hash1 = (int) hash64;
       int hash2 = (int) (hash64 >>> 32);
 
@@ -75,7 +76,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
         int numHashFunctions,
         LockFreeBitArray bits) {
       long bitSize = bits.bitSize();
-      long hash64 = Hashing.murmur3_128().hashObject(object, funnel).asLong();
+      long hash64 = murmur3_128().hashObject(object, funnel).asLong();
       int hash1 = (int) hash64;
       int hash2 = (int) (hash64 >>> 32);
 
@@ -106,7 +107,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
         int numHashFunctions,
         LockFreeBitArray bits) {
       long bitSize = bits.bitSize();
-      byte[] bytes = Hashing.murmur3_128().hashObject(object, funnel).getBytesInternal();
+      byte[] bytes = murmur3_128().hashObject(object, funnel).getBytesInternal();
       long hash1 = lowerEight(bytes);
       long hash2 = upperEight(bytes);
 
@@ -127,7 +128,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
         int numHashFunctions,
         LockFreeBitArray bits) {
       long bitSize = bits.bitSize();
-      byte[] bytes = Hashing.murmur3_128().hashObject(object, funnel).getBytesInternal();
+      byte[] bytes = murmur3_128().hashObject(object, funnel).getBytesInternal();
       long hash1 = lowerEight(bytes);
       long hash2 = upperEight(bytes);
 
@@ -142,12 +143,12 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
       return true;
     }
 
-    private /* static */ long lowerEight(byte[] bytes) {
+    /* static */ long lowerEight(byte[] bytes) {
       return Longs.fromBytes(
           bytes[7], bytes[6], bytes[5], bytes[4], bytes[3], bytes[2], bytes[1], bytes[0]);
     }
 
-    private /* static */ long upperEight(byte[] bytes) {
+    /* static */ long upperEight(byte[] bytes) {
       return Longs.fromBytes(
           bytes[15], bytes[14], bytes[13], bytes[12], bytes[11], bytes[10], bytes[9], bytes[8]);
     }
@@ -218,7 +219,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
      * final long[] will be a "rolling snapshot" of the state of the bit array. This is usually good
      * enough, but should be kept in mind.
      */
-    public static long[] toPlainArray(AtomicLongArray atomicLongArray) {
+    static long[] toPlainArray(AtomicLongArray atomicLongArray) {
       long[] array = new long[atomicLongArray.length()];
       for (int i = 0; i < array.length; ++i) {
         array[i] = atomicLongArray.get(i);
@@ -296,7 +297,7 @@ enum BloomFilterStrategies implements BloomFilter.Strategy {
     }
 
     @Override
-    public boolean equals(@CheckForNull Object o) {
+    public boolean equals(@Nullable Object o) {
       if (o instanceof LockFreeBitArray) {
         LockFreeBitArray lockFreeBitArray = (LockFreeBitArray) o;
         // TODO(lowasser): avoid allocation here

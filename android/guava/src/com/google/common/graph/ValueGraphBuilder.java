@@ -20,8 +20,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.graph.Graphs.checkNonNegative;
 
-import com.google.common.annotations.Beta;
-import com.google.common.base.Optional;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 
 /**
@@ -43,7 +41,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  *
  * <p>Examples of use:
  *
- * <pre>{@code
+ * {@snippet :
  * // Building a mutable value graph
  * MutableValueGraph<String, Double> graph =
  *     ValueGraphBuilder.undirected().allowsSelfLoops(true).build();
@@ -60,7 +58,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  *         .putEdgeValue("San Jose", "San Jose", 0.0)
  *         .putEdgeValue("San Francisco", "San Jose", 48.4)
  *         .build();
- * }</pre>
+ * }
  *
  * @author James Sexton
  * @author Joshua O'Madadhain
@@ -72,8 +70,6 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  *     #from(ValueGraph)}.
  * @since 20.0
  */
-@Beta
-@ElementTypesAreNonnullByDefault
 public final class ValueGraphBuilder<N, V> extends AbstractGraphBuilder<N> {
 
   /** Creates a new instance with the specified edge directionality. */
@@ -142,7 +138,7 @@ public final class ValueGraphBuilder<N, V> extends AbstractGraphBuilder<N> {
    */
   @CanIgnoreReturnValue
   public ValueGraphBuilder<N, V> expectedNodeCount(int expectedNodeCount) {
-    this.expectedNodeCount = Optional.of(checkNonNegative(expectedNodeCount));
+    this.expectedNodeCount = checkNonNegative(expectedNodeCount);
     return this;
   }
 
@@ -182,6 +178,7 @@ public final class ValueGraphBuilder<N, V> extends AbstractGraphBuilder<N> {
     newBuilder.incidentEdgeOrder = checkNotNull(incidentEdgeOrder);
     return newBuilder;
   }
+
   /**
    * Returns an empty {@link MutableValueGraph} with the properties of this {@link
    * ValueGraphBuilder}.

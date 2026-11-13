@@ -17,18 +17,19 @@
 package com.google.common.collect.testing.google;
 
 import static com.google.common.collect.testing.Helpers.assertEqualIgnoringOrder;
+import static com.google.common.collect.testing.Helpers.mapEntry;
+import static java.util.Arrays.asList;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.testing.AbstractContainerTester;
-import com.google.common.collect.testing.Helpers;
 import com.google.common.collect.testing.SampleElements;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map.Entry;
-import org.junit.Ignore;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Superclass for all {@code Multimap} testers.
@@ -36,8 +37,9 @@ import org.junit.Ignore;
  * @author Louis Wasserman
  */
 @GwtCompatible
-@Ignore // Affects only Android test runner, which respects JUnit 4 annotations on JUnit 3 tests.
-public abstract class AbstractMultimapTester<K, V, M extends Multimap<K, V>>
+@NullMarked
+public abstract class AbstractMultimapTester<
+        K extends @Nullable Object, V extends @Nullable Object, M extends Multimap<K, V>>
     extends AbstractContainerTester<M, Entry<K, V>> {
 
   private M multimap;
@@ -46,21 +48,25 @@ public abstract class AbstractMultimapTester<K, V, M extends Multimap<K, V>>
     return multimap;
   }
 
-  /** @return an array of the proper size with {@code null} as the key of the middle element. */
+  /**
+   * @return an array of the proper size with {@code null} as the key of the middle element.
+   */
   protected Entry<K, V>[] createArrayWithNullKey() {
     Entry<K, V>[] array = createSamplesArray();
     int nullKeyLocation = getNullLocation();
     Entry<K, V> oldEntry = array[nullKeyLocation];
-    array[nullKeyLocation] = Helpers.mapEntry(null, oldEntry.getValue());
+    array[nullKeyLocation] = mapEntry(null, oldEntry.getValue());
     return array;
   }
 
-  /** @return an array of the proper size with {@code null} as the value of the middle element. */
+  /**
+   * @return an array of the proper size with {@code null} as the value of the middle element.
+   */
   protected Entry<K, V>[] createArrayWithNullValue() {
     Entry<K, V>[] array = createSamplesArray();
     int nullValueLocation = getNullLocation();
     Entry<K, V> oldEntry = array[nullValueLocation];
-    array[nullValueLocation] = Helpers.mapEntry(oldEntry.getKey(), null);
+    array[nullValueLocation] = mapEntry(oldEntry.getKey(), null);
     return array;
   }
 
@@ -71,7 +77,7 @@ public abstract class AbstractMultimapTester<K, V, M extends Multimap<K, V>>
   protected Entry<K, V>[] createArrayWithNullKeyAndValue() {
     Entry<K, V>[] array = createSamplesArray();
     int nullValueLocation = getNullLocation();
-    array[nullValueLocation] = Helpers.mapEntry(null, null);
+    array[nullValueLocation] = mapEntry(null, null);
     return array;
   }
 
@@ -134,16 +140,18 @@ public abstract class AbstractMultimapTester<K, V, M extends Multimap<K, V>>
     return multimap;
   }
 
-  /** @see AbstractContainerTester#resetContainer() */
+  /**
+   * @see AbstractContainerTester#resetContainer()
+   */
   protected void resetCollection() {
     resetContainer();
   }
 
   protected void assertGet(K key, V... values) {
-    assertGet(key, Arrays.asList(values));
+    assertGet(key, asList(values));
   }
 
-  protected void assertGet(K key, Collection<V> values) {
+  protected void assertGet(K key, Collection<? extends V> values) {
     assertEqualIgnoringOrder(values, multimap().get(key));
 
     if (!values.isEmpty()) {

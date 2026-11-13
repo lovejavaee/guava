@@ -14,24 +14,28 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.testing.SerializableTester.reserializeAndAssert;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.testing.EqualsTester;
 import com.google.common.testing.NullPointerTester;
-import com.google.common.testing.SerializableTester;
 import java.math.BigInteger;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Tests for {@code UnsignedInteger}.
  *
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullUnmarked
 public class UnsignedIntegerTest extends TestCase {
   private static final ImmutableSet<Integer> TEST_INTS;
   private static final ImmutableSet<Long> TEST_LONGS;
@@ -111,6 +115,7 @@ public class UnsignedIntegerTest extends TestCase {
     }
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // too slow
   public void testToStringRadix() {
     for (int radix = Character.MIN_RADIX; radix <= Character.MAX_RADIX; radix++) {
@@ -172,6 +177,7 @@ public class UnsignedIntegerTest extends TestCase {
     }
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // multiply
   public void testTimes() {
     for (int a : TEST_INTS) {
@@ -181,7 +187,7 @@ public class UnsignedIntegerTest extends TestCase {
         int expected =
             force32(aUnsigned.bigIntegerValue().multiply(bUnsigned.bigIntegerValue()).intValue());
         UnsignedInteger unsignedMul = aUnsigned.times(bUnsigned);
-        assertWithMessage(aUnsigned + " * " + bUnsigned)
+        assertWithMessage("%s * %s", aUnsigned, bUnsigned)
             .that(unsignedMul.intValue())
             .isEqualTo(expected);
       }
@@ -204,11 +210,9 @@ public class UnsignedIntegerTest extends TestCase {
 
   public void testDivideByZeroThrows() {
     for (int a : TEST_INTS) {
-      try {
-        UnsignedInteger unused = UnsignedInteger.fromIntBits(a).dividedBy(UnsignedInteger.ZERO);
-        fail("Expected ArithmeticException");
-      } catch (ArithmeticException expected) {
-      }
+      assertThrows(
+          ArithmeticException.class,
+          () -> UnsignedInteger.fromIntBits(a).dividedBy(UnsignedInteger.ZERO));
     }
   }
 
@@ -228,11 +232,9 @@ public class UnsignedIntegerTest extends TestCase {
 
   public void testModByZero() {
     for (int a : TEST_INTS) {
-      try {
-        UnsignedInteger.fromIntBits(a).mod(UnsignedInteger.ZERO);
-        fail("Expected ArithmeticException");
-      } catch (ArithmeticException expected) {
-      }
+      assertThrows(
+          ArithmeticException.class,
+          () -> UnsignedInteger.fromIntBits(a).mod(UnsignedInteger.ZERO));
     }
   }
 
@@ -247,6 +249,7 @@ public class UnsignedIntegerTest extends TestCase {
     }
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // too slow
   public void testEquals() {
     EqualsTester equalsTester = new EqualsTester();
@@ -269,13 +272,15 @@ public class UnsignedIntegerTest extends TestCase {
     }
   }
 
-  @GwtIncompatible // serialization
+  @GwtIncompatible
+  @J2ktIncompatible
   public void testSerialization() {
     for (int a : TEST_INTS) {
-      SerializableTester.reserializeAndAssert(UnsignedInteger.fromIntBits(a));
+      reserializeAndAssert(UnsignedInteger.fromIntBits(a));
     }
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(UnsignedInteger.class);

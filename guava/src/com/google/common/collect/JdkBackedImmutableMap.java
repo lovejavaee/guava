@@ -17,22 +17,23 @@
 package com.google.common.collect;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.ImmutableList.asImmutableList;
+import static com.google.common.collect.Maps.newHashMapWithExpectedSize;
 import static com.google.common.collect.RegularImmutableMap.makeImmutable;
 import static java.util.Objects.requireNonNull;
 
-import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
-import javax.annotation.CheckForNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of ImmutableMap backed by a JDK HashMap, which has smartness protecting against
  * hash flooding.
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtIncompatible
 final class JdkBackedImmutableMap<K, V> extends ImmutableMap<K, V> {
   /**
    * Creates an {@code ImmutableMap} backed by a JDK HashMap. Used when probable hash flooding is
@@ -41,7 +42,7 @@ final class JdkBackedImmutableMap<K, V> extends ImmutableMap<K, V> {
    */
   static <K, V> ImmutableMap<K, V> create(
       int n, @Nullable Entry<K, V>[] entryArray, boolean throwIfDuplicateKeys) {
-    Map<K, V> delegateMap = Maps.newHashMapWithExpectedSize(n);
+    Map<K, V> delegateMap = newHashMapWithExpectedSize(n);
     // If duplicates are allowed, this map will track the last value for each duplicated key.
     // A second pass will retain only the first entry for that key, but with this last value. The
     // value will then be replaced by null, signaling that later entries with the same key should
@@ -83,7 +84,7 @@ final class JdkBackedImmutableMap<K, V> extends ImmutableMap<K, V> {
       }
       entryArray = newEntryArray;
     }
-    return new JdkBackedImmutableMap<>(delegateMap, ImmutableList.asImmutableList(entryArray, n));
+    return new JdkBackedImmutableMap<>(delegateMap, asImmutableList(entryArray, n));
   }
 
   private final transient Map<K, V> delegateMap;
@@ -100,13 +101,12 @@ final class JdkBackedImmutableMap<K, V> extends ImmutableMap<K, V> {
   }
 
   @Override
-  @CheckForNull
-  public V get(@CheckForNull Object key) {
+  public @Nullable V get(@Nullable Object key) {
     return delegateMap.get(key);
   }
 
   @Override
-  ImmutableSet<Entry<K, V>> createEntrySet() {
+  public ImmutableSet<Entry<K, V>> entrySet() {
     return new ImmutableMapEntrySet.RegularEntrySet<>(this, entries);
   }
 
@@ -117,17 +117,25 @@ final class JdkBackedImmutableMap<K, V> extends ImmutableMap<K, V> {
   }
 
   @Override
-  ImmutableSet<K> createKeySet() {
+  public ImmutableSet<K> keySet() {
     return new ImmutableMapKeySet<>(this);
   }
 
   @Override
-  ImmutableCollection<V> createValues() {
+  public ImmutableCollection<V> values() {
     return new ImmutableMapValues<>(this);
   }
 
   @Override
   boolean isPartialView() {
     return false;
+  }
+
+  // redeclare to help optimizers with b/310253115
+  @SuppressWarnings("RedundantOverride")
+  @Override
+  @J2ktIncompatible
+    Object writeReplace() {
+    return super.writeReplace();
   }
 }

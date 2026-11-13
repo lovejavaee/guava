@@ -27,9 +27,11 @@ package com.google.common.hash;
 
 import static com.google.common.base.Preconditions.checkPositionIndexes;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.primitives.UnsignedBytes.toInt;
+import static com.google.common.hash.Hashing.GOOD_FAST_HASH_SEED;
+import static java.lang.Byte.toUnsignedInt;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.base.Charsets;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.primitives.Chars;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
@@ -39,7 +41,7 @@ import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.Charset;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * See MurmurHash3_x86_32 in <a
@@ -50,8 +52,9 @@ import javax.annotation.CheckForNull;
  * @author Dimitris Andreou
  * @author Kurt Alfred Kluever
  */
+@J2ktIncompatible
 @Immutable
-@ElementTypesAreNonnullByDefault
+@SuppressWarnings("IdentifierName") // the best we could do for adjacent digit blocks
 final class Murmur3_32HashFunction extends AbstractHashFunction implements Serializable {
   static final HashFunction MURMUR3_32 =
       new Murmur3_32HashFunction(0, /* supplementaryPlaneFix= */ false);
@@ -61,7 +64,7 @@ final class Murmur3_32HashFunction extends AbstractHashFunction implements Seria
   // We can include the non-BMP fix here because Hashing.goodFastHash stresses that the hash is a
   // temporary-use one. Therefore it shouldn't be persisted.
   static final HashFunction GOOD_FAST_HASH_32 =
-      new Murmur3_32HashFunction(Hashing.GOOD_FAST_HASH_SEED, /* supplementaryPlaneFix= */ true);
+      new Murmur3_32HashFunction(GOOD_FAST_HASH_SEED, /* supplementaryPlaneFix= */ true);
 
   private static final int CHUNK_SIZE = 4;
 
@@ -92,7 +95,7 @@ final class Murmur3_32HashFunction extends AbstractHashFunction implements Seria
   }
 
   @Override
-  public boolean equals(@CheckForNull Object object) {
+  public boolean equals(@Nullable Object object) {
     if (object instanceof Murmur3_32HashFunction) {
       Murmur3_32HashFunction other = (Murmur3_32HashFunction) object;
       return seed == other.seed && supplementaryPlaneFix == other.supplementaryPlaneFix;
@@ -148,10 +151,9 @@ final class Murmur3_32HashFunction extends AbstractHashFunction implements Seria
     return fmix(h1, Chars.BYTES * input.length());
   }
 
-  @SuppressWarnings("deprecation") // need to use Charsets for Android tests to pass
   @Override
   public HashCode hashString(CharSequence input, Charset charset) {
-    if (Charsets.UTF_8.equals(charset)) {
+    if (charset.equals(UTF_8)) {
       int utf16Length = input.length();
       int h1 = seed;
       int i = 0;
@@ -232,7 +234,7 @@ final class Murmur3_32HashFunction extends AbstractHashFunction implements Seria
 
     int k1 = 0;
     for (int shift = 0; i < len; i++, shift += 8) {
-      k1 ^= toInt(input[off + i]) << shift;
+      k1 ^= toUnsignedInt(input[off + i]) << shift;
     }
     h1 ^= mixK1(k1);
     return fmix(h1, len);
@@ -352,10 +354,9 @@ final class Murmur3_32HashFunction extends AbstractHashFunction implements Seria
     }
 
     @CanIgnoreReturnValue
-    @SuppressWarnings("deprecation") // need to use Charsets for Android tests to pass
     @Override
     public Hasher putString(CharSequence input, Charset charset) {
-      if (Charsets.UTF_8.equals(charset)) {
+      if (charset.equals(UTF_8)) {
         int utf16Length = input.length();
         int i = 0;
 

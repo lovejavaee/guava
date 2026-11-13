@@ -22,12 +22,21 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link Future} which forwards all its method calls to another future. Subclasses should
  * override one or more methods to modify the behavior of the backing future as desired per the <a
  * href="http://en.wikipedia.org/wiki/Decorator_pattern">decorator pattern</a>.
+ *
+ * <p><b>Warning:</b> The methods of {@code ForwardingFuture} forward <b>indiscriminately</b> to the
+ * methods of the delegate. For example, overriding {@link #get(long, TimeUnit)} alone <b>will
+ * not</b> change the behavior of {@link #get()}, which can lead to unexpected behavior. In this
+ * case, you should override {@code get()} as well.
+ *
+ * <p><b>{@code default} method warning:</b> This class does <i>not</i> forward calls to {@code
+ * default} methods. Instead, it inherits their default implementations. When those implementations
+ * invoke methods, they invoke methods on the {@code ForwardingFuture}.
  *
  * <p>Most subclasses can just use {@link SimpleForwardingFuture}.
  *
@@ -35,7 +44,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @since 1.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public abstract class ForwardingFuture<V extends @Nullable Object> extends ForwardingObject
     implements Future<V> {
   /** Constructor for use by subclasses. */
@@ -86,6 +94,7 @@ public abstract class ForwardingFuture<V extends @Nullable Object> extends Forwa
       extends ForwardingFuture<V> {
     private final Future<V> delegate;
 
+    /** Constructor for use by subclasses. */
     protected SimpleForwardingFuture(Future<V> delegate) {
       this.delegate = Preconditions.checkNotNull(delegate);
     }

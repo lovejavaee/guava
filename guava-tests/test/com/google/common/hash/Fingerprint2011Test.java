@@ -2,22 +2,27 @@
 
 package com.google.common.hash;
 
-import static com.google.common.base.Charsets.ISO_8859_1;
-import static com.google.common.base.Charsets.UTF_8;
+import static com.google.common.base.Strings.repeat;
+import static com.google.common.hash.Hashing.fingerprint2011;
 import static com.google.common.truth.Truth.assertThat;
+import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Arrays.asList;
 
-import com.google.common.base.Strings;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Ordering;
 import com.google.common.primitives.UnsignedLong;
-import java.util.Arrays;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Unit test for Fingerprint2011.
  *
  * @author kylemaddison@google.com (Kyle Maddison)
  */
+@NullUnmarked
+@J2ktIncompatible
 public class Fingerprint2011Test extends TestCase {
 
   // Length of the sample string to produce
@@ -55,19 +60,20 @@ public class Fingerprint2011Test extends TestCase {
           .put(1, 0x8199675ecaa6fe64L)
           .put(0, 0x23ad7c904aa665e3L)
           .build();
-  private static final HashFunction HASH_FN = Hashing.fingerprint2011();
+  private static final HashFunction HASH_FN = fingerprint2011();
 
   // If this test fails, all bets are off
+  @SuppressWarnings("InlineMeInliner") // String.repeat unavailable under Java 8
   public void testReallySimpleFingerprints() {
     assertEquals(8473225671271759044L, fingerprint("test".getBytes(UTF_8)));
     // 32 characters long
-    assertEquals(7345148637025587076L, fingerprint(Strings.repeat("test", 8).getBytes(UTF_8)));
+    assertEquals(7345148637025587076L, fingerprint(repeat("test", 8).getBytes(UTF_8)));
     // 256 characters long
-    assertEquals(4904844928629814570L, fingerprint(Strings.repeat("test", 64).getBytes(UTF_8)));
+    assertEquals(4904844928629814570L, fingerprint(repeat("test", 64).getBytes(UTF_8)));
   }
 
   public void testStringsConsistency() {
-    for (String s : Arrays.asList("", "some", "test", "strings", "to", "try")) {
+    for (String s : asList("", "some", "test", "strings", "to", "try")) {
       assertEquals(HASH_FN.newHasher().putUnencodedChars(s).hash(), HASH_FN.hashUnencodedChars(s));
     }
   }
@@ -102,7 +108,7 @@ public class Fingerprint2011Test extends TestCase {
         fingerprint(stringA.getBytes(ISO_8859_1)), fingerprint(stringB.getBytes(ISO_8859_1)));
   }
 
-  public void testMumurHash64() {
+  public void testMurmurHash64() {
     byte[] bytes = "test".getBytes(UTF_8);
     assertEquals(
         1618900948208871284L, Fingerprint2011.murmurHash64WithSeed(bytes, 0, bytes.length, 1));
@@ -125,7 +131,7 @@ public class Fingerprint2011Test extends TestCase {
         .putBoolean(false)
         .putBoolean(false)
         .putBoolean(false);
-    final long hashCode = hasher.hash().asLong();
+    long hashCode = hasher.hash().asLong();
 
     hasher = HASH_FN.newHasher();
     hasher

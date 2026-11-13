@@ -14,24 +14,31 @@
 
 package com.google.common.primitives;
 
+import static com.google.common.collect.testing.Helpers.testComparator;
+import static com.google.common.primitives.UnsignedInts.max;
+import static com.google.common.primitives.UnsignedInts.min;
 import static com.google.common.truth.Truth.assertThat;
+import static java.util.Arrays.asList;
+import static org.junit.Assert.assertThrows;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
-import com.google.common.collect.testing.Helpers;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.testing.NullPointerTester;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 import junit.framework.TestCase;
+import org.jspecify.annotations.NullUnmarked;
 
 /**
  * Tests for UnsignedInts
  *
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
+@NullUnmarked
 public class UnsignedIntsTest extends TestCase {
   private static final long[] UNSIGNED_INTS = {
     0L,
@@ -61,12 +68,9 @@ public class UnsignedIntsTest extends TestCase {
   }
 
   private static void assertCastFails(long value) {
-    try {
-      UnsignedInts.checkedCast(value);
-      fail("Cast to int should have failed: " + value);
-    } catch (IllegalArgumentException ex) {
-      assertThat(ex).hasMessageThat().contains(String.valueOf(value));
-    }
+    IllegalArgumentException ex =
+        assertThrows(IllegalArgumentException.class, () -> UnsignedInts.checkedCast(value));
+    assertThat(ex).hasMessageThat().contains(String.valueOf(value));
   }
 
   public void testSaturatedCast() {
@@ -88,7 +92,7 @@ public class UnsignedIntsTest extends TestCase {
   public void testCompare() {
     for (long a : UNSIGNED_INTS) {
       for (long b : UNSIGNED_INTS) {
-        int cmpAsLongs = Longs.compare(a, b);
+        int cmpAsLongs = Long.compare(a, b);
         int cmpAsUInt = UnsignedInts.compare((int) a, (int) b);
         assertThat(Integer.signum(cmpAsUInt)).isEqualTo(Integer.signum(cmpAsLongs));
       }
@@ -96,18 +100,14 @@ public class UnsignedIntsTest extends TestCase {
   }
 
   public void testMax_noArgs() {
-    try {
-      UnsignedInts.max();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> max());
   }
 
   public void testMax() {
-    assertThat(UnsignedInts.max(LEAST)).isEqualTo(LEAST);
-    assertThat(UnsignedInts.max(GREATEST)).isEqualTo(GREATEST);
+    assertThat(max(LEAST)).isEqualTo(LEAST);
+    assertThat(max(GREATEST)).isEqualTo(GREATEST);
     assertThat(
-            UnsignedInts.max(
+            max(
                 (int) 8L,
                 (int) 6L,
                 (int) 7L,
@@ -119,18 +119,14 @@ public class UnsignedIntsTest extends TestCase {
   }
 
   public void testMin_noArgs() {
-    try {
-      UnsignedInts.min();
-      fail();
-    } catch (IllegalArgumentException expected) {
-    }
+    assertThrows(IllegalArgumentException.class, () -> min());
   }
 
   public void testMin() {
-    assertThat(UnsignedInts.min(LEAST)).isEqualTo(LEAST);
-    assertThat(UnsignedInts.min(GREATEST)).isEqualTo(GREATEST);
+    assertThat(min(LEAST)).isEqualTo(LEAST);
+    assertThat(min(GREATEST)).isEqualTo(GREATEST);
     assertThat(
-            UnsignedInts.min(
+            min(
                 (int) 8L,
                 (int) 6L,
                 (int) 7L,
@@ -143,7 +139,7 @@ public class UnsignedIntsTest extends TestCase {
 
   public void testLexicographicalComparator() {
     List<int[]> ordered =
-        Arrays.asList(
+        asList(
             new int[] {},
             new int[] {LEAST},
             new int[] {LEAST, LEAST},
@@ -155,7 +151,7 @@ public class UnsignedIntsTest extends TestCase {
             new int[] {GREATEST, GREATEST, GREATEST});
 
     Comparator<int[]> comparator = UnsignedInts.lexicographicalComparator();
-    Helpers.testComparator(comparator, ordered);
+    testComparator(comparator, ordered);
   }
 
   public void testSort() {
@@ -222,11 +218,10 @@ public class UnsignedIntsTest extends TestCase {
   public void testDivide() {
     for (long a : UNSIGNED_INTS) {
       for (long b : UNSIGNED_INTS) {
-        try {
+        if (b == 0) {
+          assertThrows(ArithmeticException.class, () -> UnsignedInts.divide((int) a, (int) b));
+        } else {
           assertThat(UnsignedInts.divide((int) a, (int) b)).isEqualTo((int) (a / b));
-          assertThat(b).isNotEqualTo(0);
-        } catch (ArithmeticException e) {
-          assertThat(b).isEqualTo(0);
         }
       }
     }
@@ -235,11 +230,10 @@ public class UnsignedIntsTest extends TestCase {
   public void testRemainder() {
     for (long a : UNSIGNED_INTS) {
       for (long b : UNSIGNED_INTS) {
-        try {
+        if (b == 0) {
+          assertThrows(ArithmeticException.class, () -> UnsignedInts.remainder((int) a, (int) b));
+        } else {
           assertThat(UnsignedInts.remainder((int) a, (int) b)).isEqualTo((int) (a % b));
-          assertThat(b).isNotEqualTo(0);
-        } catch (ArithmeticException e) {
-          assertThat(b).isEqualTo(0);
         }
       }
     }
@@ -268,11 +262,8 @@ public class UnsignedIntsTest extends TestCase {
   }
 
   public void testParseIntFail() {
-    try {
-      UnsignedInts.parseUnsignedInt(Long.toString(1L << 32));
-      fail("Expected NumberFormatException");
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(
+        NumberFormatException.class, () -> UnsignedInts.parseUnsignedInt(Long.toString(1L << 32)));
   }
 
   public void testParseIntWithRadix() {
@@ -286,35 +277,42 @@ public class UnsignedIntsTest extends TestCase {
 
   public void testParseIntWithRadixLimits() {
     // loops through all legal radix values.
-    for (int radix = Character.MIN_RADIX; radix <= Character.MAX_RADIX; radix++) {
+    for (int r = Character.MIN_RADIX; r <= Character.MAX_RADIX; r++) {
+      int radix = r;
       // tests can successfully parse a number string with this radix.
       String maxAsString = Long.toString((1L << 32) - 1, radix);
       assertThat(UnsignedInts.parseUnsignedInt(maxAsString, radix)).isEqualTo(-1);
 
-      try {
-        // tests that we get exception where an overflow would occur.
-        long overflow = 1L << 32;
-        String overflowAsString = Long.toString(overflow, radix);
-        UnsignedInts.parseUnsignedInt(overflowAsString, radix);
-        fail();
-      } catch (NumberFormatException expected) {
-      }
+      long overflow = 1L << 32;
+      String overflowAsString = Long.toString(overflow, radix);
+      assertThrows(
+          NumberFormatException.class,
+          () -> UnsignedInts.parseUnsignedInt(overflowAsString, radix));
     }
   }
 
   public void testParseIntThrowsExceptionForInvalidRadix() {
     // Valid radix values are Character.MIN_RADIX to Character.MAX_RADIX,
     // inclusive.
+    //
+    // Note: According to the spec, a NumberFormatException is thrown for a number that is not
+    // parseable, but the spec doesn't seem to say which exception is thrown for an invalid radix.
+    // In contrast to the JVM, Kotlin native throws an Illegal argument exception in this case
+    // (which seems to make more sense).
     try {
       UnsignedInts.parseUnsignedInt("0", Character.MIN_RADIX - 1);
       fail();
     } catch (NumberFormatException expected) {
+    } catch (IllegalArgumentException expected) {
+      // Kotlin native, see above
     }
 
     try {
       UnsignedInts.parseUnsignedInt("0", Character.MAX_RADIX + 1);
       fail();
     } catch (NumberFormatException expected) {
+    } catch (IllegalArgumentException expected) {
+      // Kotlin native, see above
     }
 
     // The radix is used as an array index, so try a negative value.
@@ -322,6 +320,8 @@ public class UnsignedIntsTest extends TestCase {
       UnsignedInts.parseUnsignedInt("0", -1);
       fail();
     } catch (NumberFormatException expected) {
+    } catch (IllegalArgumentException expected) {
+      // Kotlin native, see above
     }
   }
 
@@ -336,30 +336,13 @@ public class UnsignedIntsTest extends TestCase {
   }
 
   public void testDecodeIntFails() {
-    try {
-      // One more than maximum value
-      UnsignedInts.decode("0xfffffffff");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedInts.decode("0xfffffffff"));
 
-    try {
-      UnsignedInts.decode("-5");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedInts.decode("-5"));
 
-    try {
-      UnsignedInts.decode("-0x5");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedInts.decode("-0x5"));
 
-    try {
-      UnsignedInts.decode("-05");
-      fail();
-    } catch (NumberFormatException expected) {
-    }
+    assertThrows(NumberFormatException.class, () -> UnsignedInts.decode("-05"));
   }
 
   public void testToString() {
@@ -384,6 +367,7 @@ public class UnsignedIntsTest extends TestCase {
     return UnsignedInts.join(",", values);
   }
 
+  @J2ktIncompatible
   @GwtIncompatible // NullPointerTester
   public void testNulls() {
     new NullPointerTester().testAllPublicStaticMethods(UnsignedInts.class);

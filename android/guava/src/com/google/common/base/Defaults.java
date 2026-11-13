@@ -18,7 +18,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * This class provides default values for all Java types, as defined by the JLS.
@@ -28,7 +28,6 @@ import javax.annotation.CheckForNull;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public final class Defaults {
   private Defaults() {}
 
@@ -40,9 +39,16 @@ public final class Defaults {
    * false} for {@code boolean} and {@code '\0'} for {@code char}. For non-primitive types and
    * {@code void}, {@code null} is returned.
    */
-  @SuppressWarnings("unchecked")
-  @CheckForNull
-  public static <T> T defaultValue(Class<T> type) {
+  @SuppressWarnings({
+    /*
+     * `type.cast(...)` would be wrong because `type` is a primitive. We'd need
+     * `c.g.c.primitives.Primitives.wrap(type).cast(...)`, and we can't depend on `primitives` from
+     * `base`.
+     */
+    "unchecked",
+    "BooleanLiteral" // `(T) false` would produce an error
+  })
+  public static <T> @Nullable T defaultValue(Class<T> type) {
     checkNotNull(type);
     if (type.isPrimitive()) {
       if (type == boolean.class) {

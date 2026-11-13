@@ -18,18 +18,22 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
+import static java.lang.Math.floorMod;
+import static java.lang.System.arraycopy;
+import static java.util.Collections.emptyList;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
+import com.google.errorprone.annotations.InlineMe;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.RandomAccess;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utility methods pertaining to {@code boolean} primitives, that are not already found in
@@ -42,7 +46,6 @@ import javax.annotation.CheckForNull;
  * @since 1.0
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class Booleans {
   private Booleans() {}
 
@@ -75,12 +78,11 @@ public final class Booleans {
   /**
    * Returns a {@code Comparator<Boolean>} that sorts {@code true} before {@code false}.
    *
-   * <p>This is particularly useful in Java 8+ in combination with {@code Comparators.comparing},
-   * e.g. {@code Comparators.comparing(Foo::hasBar, trueFirst())}.
+   * <p>This is particularly useful in Java 8+ in combination with {@code Comparator.comparing},
+   * e.g. {@code Comparator.comparing(Foo::hasBar, trueFirst())}.
    *
    * @since 21.0
    */
-  @Beta
   public static Comparator<Boolean> trueFirst() {
     return BooleanComparator.TRUE_FIRST;
   }
@@ -88,27 +90,25 @@ public final class Booleans {
   /**
    * Returns a {@code Comparator<Boolean>} that sorts {@code false} before {@code true}.
    *
-   * <p>This is particularly useful in Java 8+ in combination with {@code Comparators.comparing},
-   * e.g. {@code Comparators.comparing(Foo::hasBar, falseFirst())}.
+   * <p>This is particularly useful in Java 8+ in combination with {@code Comparator.comparing},
+   * e.g. {@code Comparator.comparing(Foo::hasBar, falseFirst())}.
    *
    * @since 21.0
    */
-  @Beta
   public static Comparator<Boolean> falseFirst() {
     return BooleanComparator.FALSE_FIRST;
   }
 
   /**
-   * Returns a hash code for {@code value}; equal to the result of invoking {@code ((Boolean)
-   * value).hashCode()}.
-   *
-   * <p><b>Java 8 users:</b> use {@link Boolean#hashCode(boolean)} instead.
+   * Returns a hash code for {@code value}; obsolete alternative to {@link
+   * Boolean#hashCode(boolean)}.
    *
    * @param value a primitive {@code boolean} value
    * @return a hash code for the value
    */
+  @InlineMe(replacement = "Boolean.hashCode(value)")
   public static int hashCode(boolean value) {
-    return value ? 1231 : 1237;
+    return Boolean.hashCode(value);
   }
 
   /**
@@ -116,7 +116,7 @@ public final class Booleans {
    * considered less than {@code true}). The sign of the value returned is the same as that of
    * {@code ((Boolean) a).compareTo(b)}.
    *
-   * <p><b>Note for Java 7 and later:</b> this method should be treated as deprecated; use the
+   * <p><b>Note:</b> this method is now unnecessary and should be treated as deprecated; use the
    * equivalent {@link Boolean#compare} method instead.
    *
    * @param a the first {@code boolean} to compare
@@ -124,8 +124,9 @@ public final class Booleans {
    * @return a positive number if only {@code a} is {@code true}, a negative number if only {@code
    *     b} is true, or zero if {@code a == b}
    */
+  @InlineMe(replacement = "Boolean.compare(a, b)")
   public static int compare(boolean a, boolean b) {
-    return (a == b) ? 0 : (a ? 1 : -1);
+    return Boolean.compare(a, b);
   }
 
   /**
@@ -163,9 +164,20 @@ public final class Booleans {
     return indexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int indexOf(boolean[] array, boolean target, int start, int end) {
-    for (int i = start; i < end; i++) {
+  /**
+   * Returns the index of the first appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the least index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i] ==
+   *     target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(boolean[] array, boolean target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = fromIndex; i < toIndex; i++) {
       if (array[i] == target) {
         return i;
       }
@@ -184,14 +196,32 @@ public final class Booleans {
    * @param target the array to search for as a sub-sequence of {@code array}
    */
   public static int indexOf(boolean[] array, boolean[] target) {
+    return indexOf(array, target, 0, array.length);
+  }
+
+  /**
+   * Returns the start position of the first occurrence of the specified {@code target} within
+   * {@code array} between {@code fromIndex} inclusive and {@code toIndex} exclusive, or {@code -1}
+   * if there is no such occurrence.
+   *
+   * <p>More formally, returns the lowest index {@code i} such that {@code i >= fromIndex}, {@code i
+   * + target.length <= toIndex}, and {@code Arrays.copyOfRange(array, i, i + target.length)}
+   * contains exactly the same elements as {@code target}.
+   *
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(boolean[] array, boolean[] target, int fromIndex, int toIndex) {
     checkNotNull(array, "array");
     checkNotNull(target, "target");
+    checkPositionIndexes(fromIndex, toIndex, array.length);
     if (target.length == 0) {
-      return 0;
+      return fromIndex;
     }
 
     outer:
-    for (int i = 0; i < array.length - target.length + 1; i++) {
+    for (int i = fromIndex; i < toIndex - target.length + 1; i++) {
       for (int j = 0; j < target.length; j++) {
         if (array[i + j] != target[j]) {
           continue outer;
@@ -214,9 +244,20 @@ public final class Booleans {
     return lastIndexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int lastIndexOf(boolean[] array, boolean target, int start, int end) {
-    for (int i = end - 1; i >= start; i--) {
+  /**
+   * Returns the index of the last appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the greatest index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i]
+   *     == target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int lastIndexOf(boolean[] array, boolean target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = toIndex - 1; i >= fromIndex; i--) {
       if (array[i] == target) {
         return i;
       }
@@ -231,19 +272,29 @@ public final class Booleans {
    *
    * @param arrays zero or more {@code boolean} arrays
    * @return a single array containing all the values from the source arrays, in order
+   * @throws IllegalArgumentException if the total number of elements in {@code arrays} does not fit
+   *     in an {@code int}
    */
   public static boolean[] concat(boolean[]... arrays) {
-    int length = 0;
+    long length = 0;
     for (boolean[] array : arrays) {
       length += array.length;
     }
-    boolean[] result = new boolean[length];
+    boolean[] result = new boolean[checkNoOverflow(length)];
     int pos = 0;
     for (boolean[] array : arrays) {
-      System.arraycopy(array, 0, result, pos, array.length);
+      arraycopy(array, 0, result, pos, array.length);
       pos += array.length;
     }
     return result;
+  }
+
+  private static int checkNoOverflow(long result) {
+    checkArgument(
+        result == (int) result,
+        "the total number of elements (%s) in the arrays must fit in an int",
+        result);
+    return (int) result;
   }
 
   /**
@@ -311,9 +362,11 @@ public final class Booleans {
 
     @Override
     public int compare(boolean[] left, boolean[] right) {
+      // do not static import Math.min due to https://bugs.openjdk.org/browse/JDK-8357219
+      @SuppressWarnings("StaticImportPreferred")
       int minLength = Math.min(left.length, right.length);
       for (int i = 0; i < minLength; i++) {
-        int result = Booleans.compare(left[i], right[i]);
+        int result = Boolean.compare(left[i], right[i]);
         if (result != 0) {
           return result;
         }
@@ -371,13 +424,12 @@ public final class Booleans {
    */
   public static List<Boolean> asList(boolean... backingArray) {
     if (backingArray.length == 0) {
-      return Collections.emptyList();
+      return emptyList();
     }
     return new BooleanArrayAsList(backingArray);
   }
 
-  @GwtCompatible
-  private static class BooleanArrayAsList extends AbstractList<Boolean>
+  private static final class BooleanArrayAsList extends AbstractList<Boolean>
       implements RandomAccess, Serializable {
     final boolean[] array;
     final int start;
@@ -410,14 +462,14 @@ public final class Booleans {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object target) {
+    public boolean contains(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       return (target instanceof Boolean)
           && Booleans.indexOf(array, (Boolean) target, start, end) != -1;
     }
 
     @Override
-    public int indexOf(@CheckForNull Object target) {
+    public int indexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Boolean) {
         int i = Booleans.indexOf(array, (Boolean) target, start, end);
@@ -429,7 +481,7 @@ public final class Booleans {
     }
 
     @Override
-    public int lastIndexOf(@CheckForNull Object target) {
+    public int lastIndexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Boolean) {
         int i = Booleans.lastIndexOf(array, (Boolean) target, start, end);
@@ -454,13 +506,13 @@ public final class Booleans {
       int size = size();
       checkPositionIndexes(fromIndex, toIndex, size);
       if (fromIndex == toIndex) {
-        return Collections.emptyList();
+        return emptyList();
       }
       return new BooleanArrayAsList(array, start + fromIndex, start + toIndex);
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object == this) {
         return true;
       }
@@ -484,7 +536,7 @@ public final class Booleans {
     public int hashCode() {
       int result = 1;
       for (int i = start; i < end; i++) {
-        result = 31 * result + Booleans.hashCode(array[i]);
+        result = 31 * result + Boolean.hashCode(array[i]);
       }
       return result;
     }
@@ -503,7 +555,7 @@ public final class Booleans {
       return Arrays.copyOfRange(array, start, end);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /**
@@ -511,7 +563,6 @@ public final class Booleans {
    *
    * @since 16.0
    */
-  @Beta
   public static int countTrue(boolean... values) {
     int count = 0;
     for (boolean value : values) {
@@ -561,7 +612,7 @@ public final class Booleans {
    *
    * <p>The provided "distance" may be negative, which will rotate left.
    *
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(boolean[] array, int distance) {
     rotate(array, distance, 0, array.length);
@@ -577,26 +628,24 @@ public final class Booleans {
    *
    * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
    *     {@code toIndex > fromIndex}
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(boolean[] array, int distance, int fromIndex, int toIndex) {
     // See Ints.rotate for more details about possible algorithms here.
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    if (array.length <= 1) {
+    int length = toIndex - fromIndex;
+    if (length <= 1) {
       return;
     }
 
-    int length = toIndex - fromIndex;
-    // Obtain m = (-distance mod length), a non-negative value less than "length". This is how many
-    // places left to rotate.
-    int m = -distance % length;
-    m = (m < 0) ? m + length : m;
-    // The current index of what will become the first element of the rotated section.
-    int newFirstIndex = m + fromIndex;
-    if (newFirstIndex == fromIndex) {
+    // Map the given distance to an equivalent, non-negative value less than "length".
+    distance = floorMod(distance, length);
+    if (distance == 0) {
       return;
     }
+    // The current index of what will become the first element of the rotated section.
+    int newFirstIndex = toIndex - distance;
 
     reverse(array, fromIndex, newFirstIndex);
     reverse(array, newFirstIndex, toIndex);

@@ -18,7 +18,7 @@ package com.google.common.eventbus.outside;
 
 import com.google.common.eventbus.EventBus;
 import junit.framework.TestCase;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Abstract base class for tests that EventBus finds the correct subscribers.
@@ -42,7 +42,7 @@ abstract class AbstractEventBusTest<H> extends TestCase {
   }
 
   @Override
-  protected void setUp() throws Exception {
+  protected void setUp() {
     subscriber = createSubscriber();
     EventBus bus = new EventBus();
     bus.register(subscriber);
@@ -50,7 +50,7 @@ abstract class AbstractEventBusTest<H> extends TestCase {
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  protected void tearDown() {
     subscriber = null;
   }
 }

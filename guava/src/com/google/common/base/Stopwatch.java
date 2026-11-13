@@ -38,7 +38,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>In contrast, <i>wall time</i> is a reading of "now" as given by a method like
  * {@link System#currentTimeMillis()}, best represented as an {@link java.time.Instant}. Such values
- * <i>can</i> be subtracted to obtain a {@code Duration} (such as by {@code Duration.between}), but
+ * <i>can</i> be subtracted to obtain a {@link Duration} (such as by {@link Duration#between}), but
  * doing so does <i>not</i> give a reliable measurement of elapsed time, because wall time readings
  * are inherently approximate, routinely affected by periodic clock corrections. Because this class
  * (by default) uses {@link System#nanoTime}, it is unaffected by these changes.
@@ -55,12 +55,12 @@ import java.util.concurrent.TimeUnit;
  * <p>The one downside of {@code Stopwatch} relative to {@link System#nanoTime()} is that {@code
  * Stopwatch} requires object allocation and additional method calls, which can reduce the accuracy
  * of the elapsed times reported. {@code Stopwatch} is still suitable for logging and metrics where
- * reasonably accurate values are sufficient. If the uncommon case that you need to maximize
+ * reasonably accurate values are sufficient. In the uncommon case that you need to maximize
  * accuracy, use {@code System.nanoTime()} directly instead.
  *
  * <p>Basic usage:
  *
- * <pre>{@code
+ * {@snippet :
  * Stopwatch stopwatch = Stopwatch.createStarted();
  * doSomething();
  * stopwatch.stop(); // optional
@@ -68,7 +68,7 @@ import java.util.concurrent.TimeUnit;
  * Duration duration = stopwatch.elapsed();
  *
  * log.info("time: " + stopwatch); // formatted string like "12.3 ms"
- * }</pre>
+ * }
  *
  * <p>The state-changing methods are not idempotent; it is an error to start or stop a stopwatch
  * that is already in the desired state.
@@ -82,21 +82,20 @@ import java.util.concurrent.TimeUnit;
  * <p><b>Warning for Android users:</b> a stopwatch with default behavior may not continue to keep
  * time while the device is asleep. Instead, create one like this:
  *
- * <pre>{@code
+ * {@snippet :
  * Stopwatch.createStarted(
  *      new Ticker() {
  *        public long read() {
- *          return android.os.SystemClock.elapsedRealtimeNanos(); // requires API Level 17
+ *          return android.os.SystemClock.elapsedRealtimeNanos();
  *        }
  *      });
- * }</pre>
+ * }
  *
  * @author Kevin Bourrillion
  * @since 10.0
  */
-@GwtCompatible(emulated = true)
+@GwtCompatible
 @SuppressWarnings("GoodTime") // lots of violations
-@ElementTypesAreNonnullByDefault
 public final class Stopwatch {
   private final Ticker ticker;
   private boolean isRunning;
@@ -210,7 +209,7 @@ public final class Stopwatch {
    *
    * <p>It is generally not a good idea to use an ambiguous, unitless {@code long} to represent
    * elapsed time. Therefore, we recommend using {@link #elapsed()} instead, which returns a
-   * strongly-typed {@code Duration} instance.
+   * strongly-typed {@link Duration} instance.
    *
    * @since 14.0 (since 10.0 as {@code elapsedTime()})
    */
@@ -222,7 +221,7 @@ public final class Stopwatch {
    * Returns the current elapsed time shown on this stopwatch as a {@link Duration}. Unlike {@link
    * #elapsed(TimeUnit)}, this method does not lose any precision due to rounding.
    *
-   * @since 22.0
+   * @since 22.0 (but only since 33.4.0 in the Android flavor)
    */
   @J2ktIncompatible
   @GwtIncompatible
@@ -270,7 +269,7 @@ public final class Stopwatch {
       case NANOSECONDS:
         return "ns";
       case MICROSECONDS:
-        return "\u03bcs"; // μs
+        return "μs";
       case MILLISECONDS:
         return "ms";
       case SECONDS:
@@ -281,8 +280,7 @@ public final class Stopwatch {
         return "h";
       case DAYS:
         return "d";
-      default:
-        throw new AssertionError();
     }
+    throw new AssertionError();
   }
 }

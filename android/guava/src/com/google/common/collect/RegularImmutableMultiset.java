@@ -16,12 +16,12 @@ package com.google.common.collect;
 
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.collect.Multiset.Entry;
 import com.google.common.primitives.Ints;
-import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.j2objc.annotations.WeakOuter;
 import java.io.Serializable;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of {@link ImmutableMultiset} with zero or more elements.
@@ -29,17 +29,14 @@ import javax.annotation.CheckForNull;
  * @author Jared Levy
  * @author Louis Wasserman
  */
-@GwtCompatible(emulated = true, serializable = true)
+@GwtCompatible
 @SuppressWarnings("serial") // uses writeReplace(), not default serialization
-@ElementTypesAreNonnullByDefault
-class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
+final class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   static final RegularImmutableMultiset<Object> EMPTY =
       new RegularImmutableMultiset<>(ObjectCountHashMap.create());
 
   final transient ObjectCountHashMap<E> contents;
   private final transient int size;
-
-  @LazyInit @CheckForNull private transient ImmutableSet<E> elementSet;
 
   RegularImmutableMultiset(ObjectCountHashMap<E> contents) {
     this.contents = contents;
@@ -56,7 +53,7 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
   }
 
   @Override
-  public int count(@CheckForNull Object element) {
+  public int count(@Nullable Object element) {
     return contents.get(element);
   }
 
@@ -67,8 +64,7 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
 
   @Override
   public ImmutableSet<E> elementSet() {
-    ImmutableSet<E> result = elementSet;
-    return (result == null) ? elementSet = new ElementSet() : result;
+    return new ElementSet();
   }
 
   @WeakOuter
@@ -80,7 +76,7 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object object) {
+    public boolean contains(@Nullable Object object) {
       return RegularImmutableMultiset.this.contains(object);
     }
 
@@ -92,6 +88,15 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
     @Override
     public int size() {
       return contents.size();
+    }
+
+    // redeclare to help optimizers with b/310253115
+    @SuppressWarnings("RedundantOverride")
+    @Override
+    @GwtIncompatible
+    @J2ktIncompatible
+        Object writeReplace() {
+      return super.writeReplace();
     }
   }
 
@@ -127,12 +132,13 @@ class RegularImmutableMultiset<E> extends ImmutableMultiset<E> {
       return builder.build();
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
-  @GwtIncompatible
   @Override
-  Object writeReplace() {
+  @J2ktIncompatible
+  @GwtIncompatible
+    Object writeReplace() {
     return new SerializedForm(this);
   }
 }

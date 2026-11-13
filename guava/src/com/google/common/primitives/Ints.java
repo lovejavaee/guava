@@ -18,22 +18,27 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkElementIndex;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
+import static java.lang.Math.floorMod;
+import static java.lang.System.arraycopy;
+import static java.util.Arrays.sort;
+import static java.util.Collections.emptyList;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Converter;
+import com.google.errorprone.annotations.InlineMe;
+import com.google.errorprone.annotations.InlineMeValidationDisabled;
 import java.io.Serializable;
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.RandomAccess;
 import java.util.Spliterator;
 import java.util.Spliterators;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Static utility methods pertaining to {@code int} primitives, that are not already found in either
@@ -45,17 +50,16 @@ import javax.annotation.CheckForNull;
  * @author Kevin Bourrillion
  * @since 1.0
  */
-@GwtCompatible(emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class Ints extends IntsMethodsForWeb {
   private Ints() {}
 
   /**
    * The number of bytes required to represent a primitive {@code int} value.
    *
-   * <p><b>Java 8 users:</b> use {@link Integer#BYTES} instead.
+   * <p>Prefer {@link Integer#BYTES} instead.
    */
-  public static final int BYTES = Integer.SIZE / Byte.SIZE;
+  public static final int BYTES = Integer.BYTES;
 
   /**
    * The largest power of two that can be represented as an {@code int}.
@@ -65,20 +69,24 @@ public final class Ints extends IntsMethodsForWeb {
   public static final int MAX_POWER_OF_TWO = 1 << (Integer.SIZE - 2);
 
   /**
-   * Returns a hash code for {@code value}; equal to the result of invoking {@code ((Integer)
-   * value).hashCode()}.
-   *
-   * <p><b>Java 8 users:</b> use {@link Integer#hashCode(int)} instead.
+   * Returns a hash code for {@code value}; obsolete alternative to {@link Integer#hashCode(int)}.
    *
    * @param value a primitive {@code int} value
    * @return a hash code for the value
    */
+  @InlineMe(replacement = "Integer.hashCode(value)")
+  @InlineMeValidationDisabled(
+      "The hash code of an int is the int itself, so it's simplest to return that.")
   public static int hashCode(int value) {
     return value;
   }
 
   /**
    * Returns the {@code int} value that is equal to {@code value}, if possible.
+   *
+   * <p><b>Note:</b> this method is now unnecessary and should be treated as deprecated. Use {@link
+   * Math#toIntExact(long)} instead, but be aware that that method throws {@link
+   * ArithmeticException} rather than {@link IllegalArgumentException}.
    *
    * @param value any value in the range of the {@code int} type
    * @return the {@code int} value that equals {@code value}
@@ -113,7 +121,7 @@ public final class Ints extends IntsMethodsForWeb {
    * Compares the two specified {@code int} values. The sign of the value returned is the same as
    * that of {@code ((Integer) a).compareTo(b)}.
    *
-   * <p><b>Note for Java 7 and later:</b> this method should be treated as deprecated; use the
+   * <p><b>Note:</b> this method is now unnecessary and should be treated as deprecated; use the
    * equivalent {@link Integer#compare} method instead.
    *
    * @param a the first {@code int} to compare
@@ -121,8 +129,9 @@ public final class Ints extends IntsMethodsForWeb {
    * @return a negative value if {@code a} is less than {@code b}; a positive value if {@code a} is
    *     greater than {@code b}; or zero if they are equal
    */
+  @InlineMe(replacement = "Integer.compare(a, b)")
   public static int compare(int a, int b) {
-    return (a < b) ? -1 : ((a > b) ? 1 : 0);
+    return Integer.compare(a, b);
   }
 
   /**
@@ -153,9 +162,20 @@ public final class Ints extends IntsMethodsForWeb {
     return indexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int indexOf(int[] array, int target, int start, int end) {
-    for (int i = start; i < end; i++) {
+  /**
+   * Returns the index of the first appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the least index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i] ==
+   *     target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(int[] array, int target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = fromIndex; i < toIndex; i++) {
       if (array[i] == target) {
         return i;
       }
@@ -174,14 +194,32 @@ public final class Ints extends IntsMethodsForWeb {
    * @param target the array to search for as a sub-sequence of {@code array}
    */
   public static int indexOf(int[] array, int[] target) {
+    return indexOf(array, target, 0, array.length);
+  }
+
+  /**
+   * Returns the start position of the first occurrence of the specified {@code target} within
+   * {@code array} between {@code fromIndex} inclusive and {@code toIndex} exclusive, or {@code -1}
+   * if there is no such occurrence.
+   *
+   * <p>More formally, returns the lowest index {@code i} such that {@code i >= fromIndex}, {@code i
+   * + target.length <= toIndex}, and {@code Arrays.copyOfRange(array, i, i + target.length)}
+   * contains exactly the same elements as {@code target}.
+   *
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int indexOf(int[] array, int[] target, int fromIndex, int toIndex) {
     checkNotNull(array, "array");
     checkNotNull(target, "target");
+    checkPositionIndexes(fromIndex, toIndex, array.length);
     if (target.length == 0) {
-      return 0;
+      return fromIndex;
     }
 
     outer:
-    for (int i = 0; i < array.length - target.length + 1; i++) {
+    for (int i = fromIndex; i < toIndex - target.length + 1; i++) {
       for (int j = 0; j < target.length; j++) {
         if (array[i + j] != target[j]) {
           continue outer;
@@ -204,9 +242,20 @@ public final class Ints extends IntsMethodsForWeb {
     return lastIndexOf(array, target, 0, array.length);
   }
 
-  // TODO(kevinb): consider making this public
-  private static int lastIndexOf(int[] array, int target, int start, int end) {
-    for (int i = end - 1; i >= start; i--) {
+  /**
+   * Returns the index of the last appearance of the value {@code target} in {@code array} between
+   * {@code fromIndex} inclusive and {@code toIndex} exclusive.
+   *
+   * @return the greatest index {@code i} in {@code [fromIndex, toIndex)} for which {@code array[i]
+   *     == target}, or {@code -1} if no such index exists.
+   * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
+   *     {@code fromIndex > toIndex}
+   * @since NEXT
+   */
+  public static int lastIndexOf(int[] array, int target, int fromIndex, int toIndex) {
+    checkNotNull(array);
+    checkPositionIndexes(fromIndex, toIndex, array.length);
+    for (int i = toIndex - 1; i >= fromIndex; i--) {
       if (array[i] == target) {
         return i;
       }
@@ -263,13 +312,15 @@ public final class Ints extends IntsMethodsForWeb {
    * unchanged. If {@code value} is less than {@code min}, {@code min} is returned, and if {@code
    * value} is greater than {@code max}, {@code max} is returned.
    *
+   * <p><b>Java 21+ users:</b> Use {@link Math#clamp(long, int, int)} instead. Note that that method
+   * is capable of constraining a {@code long} input to an {@code int} range.
+   *
    * @param value the {@code int} value to constrain
    * @param min the lower bound (inclusive) of the range to constrain {@code value} to
    * @param max the upper bound (inclusive) of the range to constrain {@code value} to
    * @throws IllegalArgumentException if {@code min > max}
    * @since 21.0
    */
-  @Beta
   public static int constrainToRange(int value, int min, int max) {
     checkArgument(min <= max, "min (%s) must be less than or equal to max (%s)", min, max);
     return Math.min(Math.max(value, min), max);
@@ -281,19 +332,29 @@ public final class Ints extends IntsMethodsForWeb {
    *
    * @param arrays zero or more {@code int} arrays
    * @return a single array containing all the values from the source arrays, in order
+   * @throws IllegalArgumentException if the total number of elements in {@code arrays} does not fit
+   *     in an {@code int}
    */
   public static int[] concat(int[]... arrays) {
-    int length = 0;
+    long length = 0;
     for (int[] array : arrays) {
       length += array.length;
     }
-    int[] result = new int[length];
+    int[] result = new int[checkNoOverflow(length)];
     int pos = 0;
     for (int[] array : arrays) {
-      System.arraycopy(array, 0, result, pos, array.length);
+      arraycopy(array, 0, result, pos, array.length);
       pos += array.length;
     }
     return result;
+  }
+
+  private static int checkNoOverflow(long result) {
+    checkArgument(
+        result == (int) result,
+        "the total number of elements (%s) in the arrays must fit in an int",
+        result);
+    return (int) result;
   }
 
   /**
@@ -339,7 +400,7 @@ public final class Ints extends IntsMethodsForWeb {
 
   private static final class IntConverter extends Converter<String, Integer>
       implements Serializable {
-    static final IntConverter INSTANCE = new IntConverter();
+    static final Converter<String, Integer> INSTANCE = new IntConverter();
 
     @Override
     protected Integer doForward(String value) {
@@ -360,7 +421,7 @@ public final class Ints extends IntsMethodsForWeb {
       return INSTANCE;
     }
 
-    private static final long serialVersionUID = 1;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 1;
   }
 
   /**
@@ -374,7 +435,6 @@ public final class Ints extends IntsMethodsForWeb {
    *
    * @since 16.0
    */
-  @Beta
   public static Converter<String, Integer> stringConverter() {
     return IntConverter.INSTANCE;
   }
@@ -444,7 +504,7 @@ public final class Ints extends IntsMethodsForWeb {
     public int compare(int[] left, int[] right) {
       int minLength = Math.min(left.length, right.length);
       for (int i = 0; i < minLength; i++) {
-        int result = Ints.compare(left[i], right[i]);
+        int result = Integer.compare(left[i], right[i]);
         if (result != 0) {
           return result;
         }
@@ -477,7 +537,7 @@ public final class Ints extends IntsMethodsForWeb {
   public static void sortDescending(int[] array, int fromIndex, int toIndex) {
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    Arrays.sort(array, fromIndex, toIndex);
+    sort(array, fromIndex, toIndex);
     reverse(array, fromIndex, toIndex);
   }
 
@@ -520,7 +580,7 @@ public final class Ints extends IntsMethodsForWeb {
    *
    * <p>The provided "distance" may be negative, which will rotate left.
    *
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(int[] array, int distance) {
     rotate(array, distance, 0, array.length);
@@ -536,7 +596,7 @@ public final class Ints extends IntsMethodsForWeb {
    *
    * @throws IndexOutOfBoundsException if {@code fromIndex < 0}, {@code toIndex > array.length}, or
    *     {@code toIndex > fromIndex}
-   * @since NEXT
+   * @since 32.0.0
    */
   public static void rotate(int[] array, int distance, int fromIndex, int toIndex) {
     // There are several well-known algorithms for rotating part of an array (or, equivalently,
@@ -568,20 +628,18 @@ public final class Ints extends IntsMethodsForWeb {
     // especially since we already have a `reverse` method.
     checkNotNull(array);
     checkPositionIndexes(fromIndex, toIndex, array.length);
-    if (array.length <= 1) {
+    int length = toIndex - fromIndex;
+    if (length <= 1) {
       return;
     }
 
-    int length = toIndex - fromIndex;
-    // Obtain m = (-distance mod length), a non-negative value less than "length". This is how many
-    // places left to rotate.
-    int m = -distance % length;
-    m = (m < 0) ? m + length : m;
-    // The current index of what will become the first element of the rotated section.
-    int newFirstIndex = m + fromIndex;
-    if (newFirstIndex == fromIndex) {
+    // Map the given distance to an equivalent, non-negative value less than "length".
+    distance = floorMod(distance, length);
+    if (distance == 0) {
       return;
     }
+    // The current index of what will become the first element of the rotated section.
+    int newFirstIndex = toIndex - distance;
 
     reverse(array, fromIndex, newFirstIndex);
     reverse(array, newFirstIndex, toIndex);
@@ -635,13 +693,12 @@ public final class Ints extends IntsMethodsForWeb {
    */
   public static List<Integer> asList(int... backingArray) {
     if (backingArray.length == 0) {
-      return Collections.emptyList();
+      return emptyList();
     }
     return new IntArrayAsList(backingArray);
   }
 
-  @GwtCompatible
-  private static class IntArrayAsList extends AbstractList<Integer>
+  private static final class IntArrayAsList extends AbstractList<Integer>
       implements RandomAccess, Serializable {
     final int[] array;
     final int start;
@@ -679,13 +736,13 @@ public final class Ints extends IntsMethodsForWeb {
     }
 
     @Override
-    public boolean contains(@CheckForNull Object target) {
+    public boolean contains(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       return (target instanceof Integer) && Ints.indexOf(array, (Integer) target, start, end) != -1;
     }
 
     @Override
-    public int indexOf(@CheckForNull Object target) {
+    public int indexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Integer) {
         int i = Ints.indexOf(array, (Integer) target, start, end);
@@ -697,7 +754,7 @@ public final class Ints extends IntsMethodsForWeb {
     }
 
     @Override
-    public int lastIndexOf(@CheckForNull Object target) {
+    public int lastIndexOf(@Nullable Object target) {
       // Overridden to prevent a ton of boxing
       if (target instanceof Integer) {
         int i = Ints.lastIndexOf(array, (Integer) target, start, end);
@@ -722,13 +779,13 @@ public final class Ints extends IntsMethodsForWeb {
       int size = size();
       checkPositionIndexes(fromIndex, toIndex, size);
       if (fromIndex == toIndex) {
-        return Collections.emptyList();
+        return emptyList();
       }
       return new IntArrayAsList(array, start + fromIndex, start + toIndex);
     }
 
     @Override
-    public boolean equals(@CheckForNull Object object) {
+    public boolean equals(@Nullable Object object) {
       if (object == this) {
         return true;
       }
@@ -752,7 +809,7 @@ public final class Ints extends IntsMethodsForWeb {
     public int hashCode() {
       int result = 1;
       for (int i = start; i < end; i++) {
-        result = 31 * result + Ints.hashCode(array[i]);
+        result = 31 * result + Integer.hashCode(array[i]);
       }
       return result;
     }
@@ -771,19 +828,19 @@ public final class Ints extends IntsMethodsForWeb {
       return Arrays.copyOfRange(array, start, end);
     }
 
-    private static final long serialVersionUID = 0;
+    @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
   }
 
   /**
    * Parses the specified string as a signed decimal integer value. The ASCII character {@code '-'}
-   * (<code>'&#92;u002D'</code>) is recognized as the minus sign.
+   * (U+002D) is recognized as the minus sign.
    *
    * <p>Unlike {@link Integer#parseInt(String)}, this method returns {@code null} instead of
    * throwing an exception if parsing fails. Additionally, this method only accepts ASCII digits,
    * and returns {@code null} if non-ASCII digits are present in the string.
    *
-   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even under JDK 7, despite
-   * the change to {@link Integer#parseInt(String)} for that version.
+   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even though {@link
+   * Integer#parseInt(String)} accepts them.
    *
    * @param string the string representation of an integer value
    * @return the integer value represented by {@code string}, or {@code null} if {@code string} has
@@ -791,21 +848,20 @@ public final class Ints extends IntsMethodsForWeb {
    * @throws NullPointerException if {@code string} is {@code null}
    * @since 11.0
    */
-  @CheckForNull
-  public static Integer tryParse(String string) {
+  public static @Nullable Integer tryParse(String string) {
     return tryParse(string, 10);
   }
 
   /**
    * Parses the specified string as a signed integer value using the specified radix. The ASCII
-   * character {@code '-'} (<code>'&#92;u002D'</code>) is recognized as the minus sign.
+   * character {@code '-'} (U+002D) is recognized as the minus sign.
    *
    * <p>Unlike {@link Integer#parseInt(String, int)}, this method returns {@code null} instead of
    * throwing an exception if parsing fails. Additionally, this method only accepts ASCII digits,
    * and returns {@code null} if non-ASCII digits are present in the string.
    *
-   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even under JDK 7, despite
-   * the change to {@link Integer#parseInt(String, int)} for that version.
+   * <p>Note that strings prefixed with ASCII {@code '+'} are rejected, even though {@link
+   * Integer#parseInt(String)} accepts them.
    *
    * @param string the string representation of an integer value
    * @param radix the radix to use when parsing
@@ -816,10 +872,9 @@ public final class Ints extends IntsMethodsForWeb {
    * @throws NullPointerException if {@code string} is {@code null}
    * @since 19.0
    */
-  @CheckForNull
-  public static Integer tryParse(String string, int radix) {
+  public static @Nullable Integer tryParse(String string, int radix) {
     Long result = Longs.tryParse(string, radix);
-    if (result == null || result.longValue() != result.intValue()) {
+    if (result == null || result != result.intValue()) {
       return null;
     } else {
       return result.intValue();

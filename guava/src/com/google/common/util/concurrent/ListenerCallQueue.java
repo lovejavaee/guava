@@ -19,15 +19,14 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Queues;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A list of listeners for implementing a concurrency friendly observable object.
@@ -40,7 +39,7 @@ import java.util.logging.Logger;
  * <ul>
  *   <li>Multiple events for the same listener are never dispatched concurrently.
  *   <li>Events for the different listeners are dispatched concurrently.
- *   <li>All events for a given listener dispatch on the provided {@link #executor}.
+ *   <li>All events for a given listener dispatch on the provided executor.
  *   <li>It is easy for the user to ensure that listeners are never invoked while holding locks.
  * </ul>
  *
@@ -55,10 +54,9 @@ import java.util.logging.Logger;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 final class ListenerCallQueue<L> {
   // TODO(cpovirk): consider using the logger associated with listener.getClass().
-  private static final Logger logger = Logger.getLogger(ListenerCallQueue.class.getName());
+  private static final LazyLogger logger = new LazyLogger(ListenerCallQueue.class);
 
   // TODO(chrisn): promote AppendOnlyCollection for use here.
   private final List<PerListenerQueue<L>> listeners =
@@ -71,8 +69,8 @@ final class ListenerCallQueue<L> {
   }
 
   /**
-   * Adds a listener that will be called using the given executor when events are later {@link
-   * #enqueue enqueued} and {@link #dispatch dispatched}.
+   * Adds a listener that will be called using the given executor when events are later {@linkplain
+   * #enqueue enqueued} and {@linkplain #dispatch dispatched}.
    */
   public void addListener(L listener, Executor executor) {
     checkNotNull(listener, "listener");
@@ -136,10 +134,10 @@ final class ListenerCallQueue<L> {
     final Executor executor;
 
     @GuardedBy("this")
-    final Queue<ListenerCallQueue.Event<L>> waitQueue = Queues.newArrayDeque();
+    final Queue<ListenerCallQueue.Event<L>> waitQueue = new ArrayDeque<>();
 
     @GuardedBy("this")
-    final Queue<Object> labelQueue = Queues.newArrayDeque();
+    final Queue<Object> labelQueue = new ArrayDeque<>();
 
     @GuardedBy("this")
     boolean isThreadScheduled;
@@ -156,9 +154,10 @@ final class ListenerCallQueue<L> {
     }
 
     /**
-     * Dispatches all listeners {@linkplain #enqueue enqueued} prior to this call, serially and in
+     * Dispatches all events {@linkplain #enqueue enqueued} prior to this call, serially and in
      * order.
      */
+    @SuppressWarnings("CatchingUnchecked") // sneaky checked exception
     void dispatch() {
       boolean scheduleEventRunner = false;
       synchronized (this) {
@@ -170,22 +169,25 @@ final class ListenerCallQueue<L> {
       if (scheduleEventRunner) {
         try {
           executor.execute(this);
-        } catch (RuntimeException e) {
+        } catch (Exception e) { // sneaky checked exception
           // reset state in case of an error so that later dispatch calls will actually do something
           synchronized (this) {
             isThreadScheduled = false;
           }
-          // Log it and keep going.
-          logger.log(
-              Level.SEVERE,
-              "Exception while running callbacks for " + listener + " on " + executor,
-              e);
+          // TODO(b/542982933): Don't hurt other listeners by rethrowing, especially after logging?
+          logger
+              .get()
+              .log(
+                  Level.SEVERE,
+                  "Exception while running callbacks for " + listener + " on " + executor,
+                  e);
           throw e;
         }
       }
     }
 
     @Override
+    @SuppressWarnings("CatchingUnchecked") // sneaky checked exception
     public void run() {
       boolean stillRunning = true;
       try {
@@ -206,12 +208,14 @@ final class ListenerCallQueue<L> {
           // Always run while _not_ holding the lock, to avoid deadlocks.
           try {
             nextToRun.call(listener);
-          } catch (RuntimeException e) {
+          } catch (Exception e) { // sneaky checked exception
             // Log it and keep going.
-            logger.log(
-                Level.SEVERE,
-                "Exception while executing callback: " + listener + " " + nextLabel,
-                e);
+            logger
+                .get()
+                .log(
+                    Level.SEVERE,
+                    "Exception while executing callback: " + listener + " " + nextLabel,
+                    e);
           }
         }
       } finally {
@@ -225,4 +229,7 @@ final class ListenerCallQueue<L> {
       }
     }
   }
+
+  /** Constructs a new {@code ListenerCallQueue}. */
+  ListenerCallQueue() {}
 }

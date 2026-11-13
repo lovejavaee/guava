@@ -19,11 +19,14 @@ import com.google.common.annotations.J2ktIncompatible;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.DataInput;
 import java.io.IOException;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An extension of {@code DataInput} for reading from in-memory byte arrays; its methods offer
  * identical functionality but do not throw {@link IOException}.
+ *
+ * <p>To create an instance, use {@link ByteStreams#newDataInput(byte[])} or another overload of
+ * that method.
  *
  * <p><b>Warning:</b> The caller is responsible for not attempting to read past the end of the
  * array. If any method encounters the end of the array prematurely, it throws {@link
@@ -35,13 +38,12 @@ import javax.annotation.CheckForNull;
  */
 @J2ktIncompatible
 @GwtIncompatible
-@ElementTypesAreNonnullByDefault
 public interface ByteArrayDataInput extends DataInput {
   @Override
-  void readFully(byte b[]);
+  void readFully(byte[] b);
 
   @Override
-  void readFully(byte b[], int off, int len);
+  void readFully(byte[] b, int off, int len);
 
   // not guaranteed to skip n bytes so result should NOT be ignored
   // use ByteStreams.skipFully or one of the read methods instead
@@ -90,8 +92,7 @@ public interface ByteArrayDataInput extends DataInput {
 
   @CanIgnoreReturnValue // to skip a line
   @Override
-  @CheckForNull
-  String readLine();
+  @Nullable String readLine();
 
   @CanIgnoreReturnValue // to skip a field
   @Override

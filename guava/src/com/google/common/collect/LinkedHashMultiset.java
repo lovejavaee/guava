@@ -16,6 +16,8 @@
 
 package com.google.common.collect;
 
+import static com.google.common.collect.Maps.newLinkedHashMapWithExpectedSize;
+
 import com.google.common.annotations.GwtCompatible;
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
@@ -23,7 +25,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.LinkedHashMap;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@code Multiset} implementation with predictable iteration order. Its iterator orders elements
@@ -39,14 +41,13 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * @author Jared Levy
  * @since 2.0
  */
-@GwtCompatible(serializable = true, emulated = true)
-@ElementTypesAreNonnullByDefault
+@GwtCompatible
 public final class LinkedHashMultiset<E extends @Nullable Object>
     extends AbstractMapBasedMultiset<E> {
 
   /** Creates a new, empty {@code LinkedHashMultiset} using the default initial capacity. */
   public static <E extends @Nullable Object> LinkedHashMultiset<E> create() {
-    return new LinkedHashMultiset<E>();
+    return new LinkedHashMultiset<>();
   }
 
   /**
@@ -57,7 +58,7 @@ public final class LinkedHashMultiset<E extends @Nullable Object>
    * @throws IllegalArgumentException if {@code distinctElements} is negative
    */
   public static <E extends @Nullable Object> LinkedHashMultiset<E> create(int distinctElements) {
-    return new LinkedHashMultiset<E>(distinctElements);
+    return new LinkedHashMultiset<>(distinctElements);
   }
 
   /**
@@ -79,30 +80,28 @@ public final class LinkedHashMultiset<E extends @Nullable Object>
   }
 
   private LinkedHashMultiset(int distinctElements) {
-    super(Maps.<E, Count>newLinkedHashMapWithExpectedSize(distinctElements));
+    super(newLinkedHashMapWithExpectedSize(distinctElements));
   }
 
   /**
    * @serialData the number of distinct elements, the first element, its count, the second element,
    *     its count, and so on
    */
-  @GwtIncompatible // java.io.ObjectOutputStream
+  @GwtIncompatible
   @J2ktIncompatible
-  private void writeObject(ObjectOutputStream stream) throws IOException {
+    private void writeObject(ObjectOutputStream stream) throws IOException {
     stream.defaultWriteObject();
     Serialization.writeMultiset(this, stream);
   }
 
-  @GwtIncompatible // java.io.ObjectInputStream
+  @GwtIncompatible
   @J2ktIncompatible
-  private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
+    private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
     stream.defaultReadObject();
-    int distinctElements = Serialization.readCount(stream);
+    int distinctElements = stream.readInt();
     setBackingMap(new LinkedHashMap<E, Count>());
     Serialization.populateMultiset(this, stream, distinctElements);
   }
 
-  @GwtIncompatible // not needed in emulated source
-  @J2ktIncompatible
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

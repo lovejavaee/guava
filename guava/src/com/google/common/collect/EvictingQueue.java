@@ -19,8 +19,8 @@ package com.google.common.collect;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.annotations.Beta;
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
@@ -44,9 +44,7 @@ import java.util.Queue;
  * @author Kurt Alfred Kluever
  * @since 15.0
  */
-@Beta
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 public final class EvictingQueue<E> extends ForwardingQueue<E> implements Serializable {
 
   private final Queue<E> delegate;
@@ -143,5 +141,5 @@ public final class EvictingQueue<E> extends ForwardingQueue<E> implements Serial
     return super.toArray();
   }
 
-  private static final long serialVersionUID = 0L;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0L;
 }

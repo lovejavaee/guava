@@ -19,14 +19,15 @@ package com.google.common.collect;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.GwtCompatible;
+import com.google.common.annotations.GwtIncompatible;
+import com.google.common.annotations.J2ktIncompatible;
 import com.google.common.base.Supplier;
-import com.google.j2objc.annotations.WeakOuter;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
-import javax.annotation.CheckForNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Implementation of {@code Table} whose iteration ordering across row keys is sorted by their
@@ -34,7 +35,7 @@ import javax.annotation.CheckForNull;
  * single row key may or may not be ordered, depending on the implementation. When rows and columns
  * are both sorted, it's easier to use the {@link TreeBasedTable} subclass.
  *
- * <p>The {@link #rowKeySet} method returns a {@link SortedSet} and the {@link #rowMap} method
+ * <p>The {@link #rowKeySet} method returns a {@link SortedSet} and the {@link #rowMap()} method
  * returns a {@link SortedMap}, instead of the {@link Set} and {@link Map} specified by the {@link
  * Table} interface.
  *
@@ -46,7 +47,6 @@ import javax.annotation.CheckForNull;
  * @author Jared Levy
  */
 @GwtCompatible
-@ElementTypesAreNonnullByDefault
 class StandardRowSortedTable<R, C, V> extends StandardTable<R, C, V>
     implements RowSortedTable<R, C, V> {
   /*
@@ -71,7 +71,7 @@ class StandardRowSortedTable<R, C, V> extends StandardTable<R, C, V>
    * Table} interface.
    */
   @Override
-  public SortedSet<R> rowKeySet() {
+  public final SortedSet<R> rowKeySet() {
     return (SortedSet<R>) rowMap().keySet();
   }
 
@@ -82,30 +82,23 @@ class StandardRowSortedTable<R, C, V> extends StandardTable<R, C, V>
    * Table} interface.
    */
   @Override
-  public SortedMap<R, Map<C, V>> rowMap() {
+  public final SortedMap<R, Map<C, V>> rowMap() {
     return (SortedMap<R, Map<C, V>>) super.rowMap();
   }
 
   @Override
-  SortedMap<R, Map<C, V>> createRowMap() {
+  final SortedMap<R, Map<C, V>> createRowMap() {
     return new RowSortedMap();
   }
 
-  @WeakOuter
-  private class RowSortedMap extends RowMap implements SortedMap<R, Map<C, V>> {
+  private final class RowSortedMap extends RowMap implements SortedMap<R, Map<C, V>> {
     @Override
     public SortedSet<R> keySet() {
-      return (SortedSet<R>) super.keySet();
-    }
-
-    @Override
-    SortedSet<R> createKeySet() {
       return new Maps.SortedKeySet<>(this);
     }
 
     @Override
-    @CheckForNull
-    public Comparator<? super R> comparator() {
+    public @Nullable Comparator<? super R> comparator() {
       return sortedBackingMap().comparator();
     }
 
@@ -142,5 +135,5 @@ class StandardRowSortedTable<R, C, V> extends StandardTable<R, C, V>
     }
   }
 
-  private static final long serialVersionUID = 0;
+  @GwtIncompatible @J2ktIncompatible private static final long serialVersionUID = 0;
 }

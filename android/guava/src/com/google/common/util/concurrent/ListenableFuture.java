@@ -18,7 +18,8 @@ import com.google.errorprone.annotations.DoNotMock;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link Future} that accepts completion listeners. Each listener has an associated executor, and
@@ -32,25 +33,30 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *
  * <p>This class is GWT-compatible.
  *
- * <h3>Purpose</h3>
+ * <h2>Purpose</h2>
  *
  * <p>The main purpose of {@code ListenableFuture} is to help you chain together a graph of
  * asynchronous operations. You can chain them together manually with calls to methods like {@link
- * Futures#transform(ListenableFuture, com.google.common.base.Function, Executor)
- * Futures.transform}, but you will often find it easier to use a framework. Frameworks automate the
- * process, often adding features like monitoring, debugging, and cancellation. Examples of
- * frameworks include:
+ * Futures#transform(ListenableFuture, com.google.common.base.Function, Executor) Futures.transform}
+ * (or {@link FluentFuture#transform(com.google.common.base.Function, Executor)
+ * FluentFuture.transform}), but you will often find it easier to use a framework. Frameworks
+ * automate the process, often adding features like monitoring, debugging, and cancellation.
+ * Examples of frameworks include:
  *
  * <ul>
  *   <li><a href="https://dagger.dev/producers.html">Dagger Producers</a>
  * </ul>
+ *
+ * <p>If the operations in your chain create objects that must be closed when the computation is
+ * done, such as database connections or file handles, consider {@link ClosingFuture}. It closes
+ * them once the whole computation completes, fails, or is cancelled.
  *
  * <p>The main purpose of {@link #addListener addListener} is to support this chaining. You will
  * rarely use it directly, in part because it does not provide direct access to the {@code Future}
  * result. (If you want such access, you may prefer {@link Futures#addCallback
  * Futures.addCallback}.) Still, direct {@code addListener} calls are occasionally useful:
  *
- * <pre>{@code
+ * {@snippet :
  * final String name = ...;
  * inFlight.add(name);
  * ListenableFuture<Result> future = service.query(name);
@@ -62,9 +68,9 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  *     logger.info("Done with {0}", name);
  *   }
  * }, executor);
- * }</pre>
+ * }
  *
- * <h3>How to get an instance</h3>
+ * <h2>How to get an instance</h2>
  *
  * <p>We encourage you to return {@code ListenableFuture} from your methods so that your users can
  * take advantage of the {@linkplain Futures utilities built atop the class}. The way that you will
@@ -96,6 +102,10 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * JdkFutureAdapters}. However, when possible, it is more efficient and reliable to create a {@code
  * ListenableFuture} directly.
  *
+ * <p><b>{@link java.util.concurrent.CompletableFuture}</b>: If you need to adapt between {@link
+ * ListenableFuture} and {@code CompletableFuture}, consider <a
+ * href="https://github.com/lukas-krecan/future-converter">Future Converter</a>.
+ *
  * @author Sven Mawson
  * @author Nishant Thakkar
  * @since 1.0
@@ -116,7 +126,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
  * put in a special hack for us: https://issuetracker.google.com/issues/131431257)
  */
 @DoNotMock("Use the methods in Futures (like immediateFuture) or SettableFuture")
-@ElementTypesAreNonnullByDefault
+@NullMarked
 public interface ListenableFuture<V extends @Nullable Object> extends Future<V> {
   /**
    * Registers a listener to be {@linkplain Executor#execute(Runnable) run} on the given executor.
@@ -141,7 +151,7 @@ public interface ListenableFuture<V extends @Nullable Object> extends Future<V> 
    * Futures#addCallback addCallback()}.
    *
    * <p>Memory consistency effects: Actions in a thread prior to adding a listener <a
-   * href="https://docs.oracle.com/javase/specs/jls/se7/html/jls-17.html#jls-17.4.5">
+   * href="https://docs.oracle.com/javase/specs/jls/se27/html/jls-17.html#jls-17.4.5">
    * <i>happen-before</i></a> its execution begins, perhaps in another thread.
    *
    * <p>Guava implementations of {@code ListenableFuture} promptly release references to listeners
